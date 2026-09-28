@@ -19,8 +19,9 @@ spring:
         password: ${DB_PASSWORD}
 
     jpa:
+        defer-datasource-initialization: true
         hibernate:
-            ddl-auto: update
+            ddl-auto: create-drop
 
         show-sql: true
 
@@ -32,6 +33,12 @@ spring:
                     org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
 
                 dialect: org.hibernate.dialect.MariaDBDialect
+
+    sql:
+        init:
+            mode: always
+            data-locations: classpath:data.sql
+            encoding: UTF-8
 
     data:
         redis:

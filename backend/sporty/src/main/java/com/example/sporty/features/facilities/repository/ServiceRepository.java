@@ -14,6 +14,12 @@ public interface ServiceRepository
         extends JpaRepository<ServiceEntity, Long>,
                 JpaSpecificationExecutor<ServiceEntity> {
 
+    Optional<ServiceEntity>
+        findFirstByActiveTrueAndLocation_FacilityNameOrderByIdAsc(
+            String facilityName
+        );
+
+
     Optional<ServiceEntity> findByServiceId(String serviceId);
 
     @EntityGraph(attributePaths = "location")

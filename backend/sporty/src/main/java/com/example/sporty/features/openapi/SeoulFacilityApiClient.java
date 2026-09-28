@@ -12,6 +12,8 @@ import org.springframework.web.reactive.function.client.WebClient;
 import com.example.sporty.features.openapi.domain.dto.SeoulFacilityResponseDto;
 import com.example.sporty.features.openapi.domain.dto.SeoulFacilityResponseDto.ReservationSport;
 import com.example.sporty.features.openapi.domain.dto.SeoulFacilityResponseDto.Row;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * 서울시 공공서비스예약 체육시설 API 호출을 담당한다.
@@ -29,13 +31,14 @@ public class SeoulFacilityApiClient {
     private final String serviceKey;
     private final String dataType;
     private final String serviceName;
+    private final ObjectMapper objectMapper;
 
     public SeoulFacilityApiClient(
             WebClient.Builder webClientBuilder,
             @Value("${facility.openapi.base-url}") String baseUrl,
             @Value("${facility.openapi.service-key}") String serviceKey,
             @Value("${facility.openapi.data-type}") String dataType,
-            @Value("${facility.openapi.service-name}") String serviceName
+            @Value("${facility.openapi.service-name}") String serviceName, ObjectMapper objectMapper
     ) {
         this.webClient = webClientBuilder.baseUrl(baseUrl)
                     .codecs(configurer ->
@@ -46,6 +49,7 @@ public class SeoulFacilityApiClient {
         this.serviceKey = serviceKey;
         this.dataType = dataType;
         this.serviceName = serviceName;
+        this.objectMapper = objectMapper;
     }
 
     /**
@@ -73,7 +77,7 @@ public class SeoulFacilityApiClient {
     }
 
     private SeoulFacilityResponseDto fetchPage(int start, int end) {
-        SeoulFacilityResponseDto response = webClient.get()
+        String response = webClient.get()
                 .uri(uriBuilder -> uriBuilder
                         .pathSegment(
                                 serviceKey,
@@ -84,14 +88,27 @@ public class SeoulFacilityApiClient {
                         )
                         .build())
                 .retrieve()
-                .bodyToMono(SeoulFacilityResponseDto.class)
+                .bodyToMono(String.class)
                 .block(REQUEST_TIMEOUT);
+        
+        // SeoulFacilityResponseDto response;
 
         if (response == null) {
             throw new IllegalStateException("서울시 공공데이터 API 응답이 비어 있습니다.");
         }
 
-        return response;
+        try {
+            return objectMapper.readValue(
+                    response,
+                    SeoulFacilityResponseDto.class
+            );
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException(
+                    "서울시 공공데이터 API 응답을 JSON으로 변환하지 못했습니다. 응답: "
+                            + response,
+                    e
+            );
+        }
     }
 
     /**
