@@ -1,11 +1,10 @@
 # Sporty
 
-공공 체육시설 정보와 AI를 활용하여 운동 매칭 검색·생성·참여를 지원하는 웹 애플리케이션입니다.
+공공 체육시설 정보와 AI를 활용해 운동 매치 검색·생성·참여를 지원하는 웹 애플리케이션입니다.
 
-> **1차 미니프로젝트 코드 인수인계 안내**  
-> 기존 애플리케이션은 **React 프론트엔드 + 단일 Spring Boot 백엔드** 구조입니다. 이 저장소를 기반으로 2차 미니프로젝트에서 MSA 전환을 진행할 예정입니다. 아래는 **기존 모놀리식 버전의 로컬 실행 방법**이며, MSA 전환 후 실행 방법과는 다릅니다.
->
-> 이 문서는 저장소 설정을 기준으로 작성한 안내입니다. 다른 개발자 PC에서 전 과정을 검증한 것은 아닙니다.
+> **2차 미니프로젝트 팀을 위한 기존 애플리케이션 실행 안내**  
+> 아래 절차는 **MSA 전환 전 React + Spring Boot 모놀리식 버전**을 로컬에서 실행하는 방법입니다. MSA 전환 후 실행 방법은 별도로 정리합니다.  
+> 현재 팀원별 실행 환경이 다를 수 있으므로, 실제로 확인된 오류는 이 문서에 계속 반영해 주세요.
 
 ## 기술 스택
 
@@ -13,8 +12,8 @@
 | --- | --- |
 | Frontend | React, Create React App, Axios |
 | Backend | Java 17, Spring Boot 3.5.4, Spring Data JPA, Hibernate |
-| Database | MariaDB |
-| Cache / 인증 관련 인프라 | Redis |
+| Database | MariaDB (로컬 설치) |
+| Cache / 인증 관련 인프라 | Redis (Docker Compose) |
 | AI | Spring AI, OpenAI API |
 | 외부 데이터 | 서울시 체육시설 공공 API |
 
@@ -23,140 +22,128 @@
 ```text
 .
 ├── backend/
-│   └── sporty/                  # 실제 Spring Boot/Gradle 프로젝트
-│       ├── .env.example         # 백엔드 환경변수 예시
+│   └── sporty/                    # 실제 Spring Boot / Gradle 프로젝트
+│       ├── .env.example           # 백엔드 환경변수 템플릿
+│       ├── .env                   # 각자 생성 (Git에 커밋하지 않음)
 │       ├── gradlew.bat
 │       └── src/
-├── frontend/                   # React 프로젝트
-│   ├── .env.example             # 프론트엔드 환경변수 예시
-│   └── package.json
-├── docs/                       # 프로젝트 산출물
-├── compose.yaml                # 로컬 Redis 실행용
+├── frontend/                      # React 프로젝트
+│   ├── .env.example               # 프론트엔드 환경변수 템플릿
+│   ├── .env                       # 각자 생성 (Git에 커밋하지 않음)
+│   ├── package.json
+│   └── package-lock.json
+├── docs/                          # 기존 프로젝트 문서
+├── compose.yaml                   # Redis 실행용 (MariaDB 미포함)
 └── README.md
 ```
+
+`.env` 파일은 Git으로 관리하지 않습니다. **`.env.example` 파일만 저장소에 포함**하세요.
 
 ## 1. 사전 준비
 
 - Git
-- **JDK 17** (Gradle 설정 기준)
-- Node.js 및 npm (`frontend/package.json`의 의존성과 호환되는 버전)
+- **JDK 17**
+- Node.js와 npm
 - Docker Desktop (Docker Compose 사용 가능 상태)
-- MariaDB 서버 및 접속 가능한 DB 계정
-- 실제 AI 기능 사용 시 OpenAI API Key
-- 체육시설 데이터 동기화 시 해당 공공데이터 API Key 및 관련 설정
+- **로컬 MariaDB** 및 접속 가능한 DB 계정
+- AI 기능에 사용할 OpenAI API Key
+- 서울시 체육시설 데이터 동기화에 사용할 공공데이터 API Key
 
-> 아래 셸 명령어는 **Windows Git Bash** 기준입니다. Docker Desktop 및 MariaDB는 미리 실행해 주세요.
+아래 명령은 **Windows Git Bash** 기준입니다. 이미 저장소를 내려받았다면 프로젝트 최상위 디렉터리에서 시작하세요.
 
-## 2. 저장소 복제 및 기준 브랜치 선택
+## 2. Redis 실행
 
-```bash
-git clone https://github.com/livelykitten/inspire_6th_mini_1_sporty.git
-cd inspire_6th_mini_1_sporty
-git fetch origin
-git switch develop
-```
-
-기존 팀의 개발 기준 브랜치는 `develop`입니다. 기본 브랜치 `main`과 내용이 다를 수 있습니다.
-
-### 시연용 초기 데이터가 필요한 경우
-
-테스트 데이터 자동 생성 코드는 **PR #102**의 `feat/fetch-at-startup` 브랜치에 있으며, `develop`에는 병합되지 않았습니다.
-
-- PR: https://github.com/livelykitten/inspire_6th_mini_1_sporty/pull/102
-- 새로 복제한 저장소라면 `git switch --track origin/feat/fetch-at-startup`으로 해당 브랜치를 선택할 수 있습니다.
-- **이 브랜치의 `ddl-auto: create-drop` 설정은 실행 시 기존 테이블/데이터를 삭제하고 종료 시에도 스키마를 제거할 수 있습니다. 반드시 별도의 테스트 DB에서만 실행하세요.**
-- 시작 시 서울시 API 데이터를 동기화한 다음 데모 매치를 생성하므로, 외부 API 연결과 설정이 필요합니다. 동기화 오류 시 데모 데이터가 준비되지 않을 수 있습니다.
-
-## 3. Redis 실행 (Docker Compose)
-
-저장소 루트의 `compose.yaml`은 Redis 컨테이너를 실행합니다.
+저장소 루트의 `compose.yaml`로 Redis만 실행합니다.
 
 ```bash
+docker compose config
+# 설정이 정상이라면
 docker compose up -d redis
 docker compose ps
 ```
 
-기존에 Docker Desktop에서 Redis를 직접 실행해 `6379` 포트를 사용하고 있다면 기존 컨테이너를 먼저 중지하세요.
+- 백엔드를 로컬에서 실행하므로 Redis 주소는 `localhost:6379`입니다.
+- Docker Desktop에서 이미 실행 중인 Redis가 `6379` 포트를 사용하고 있다면 기존 컨테이너를 먼저 중지하세요.
+- 현재 `compose.yaml`에는 **MariaDB가 포함되어 있지 않습니다.**
 
-Spring Boot를 로컬 PC에서 실행할 때 Redis 접속 주소는 `localhost:6379`입니다. 백엔드의 `application-dev.yml`에도 이 주소가 설정되어 있습니다.
-
-Redis만 중지·삭제하려면:
+Redis 컨테이너를 종료·삭제하려면 저장소 루트에서 다음을 실행합니다.
 
 ```bash
 docker compose down
 ```
 
-## 4. MariaDB 데이터베이스 준비
+## 3. MariaDB 준비
 
-MariaDB는 **현재 Compose에 포함하지 않았습니다.** 로컬 MariaDB를 실행하고, SQL 클라이언트에서 데이터베이스를 생성하세요.
-
-일반 개발용:
+현재는 강의에서 설치한 **로컬 MariaDB**를 그대로 사용합니다. MariaDB 서버가 실행 중인지 확인하고, 다음 DB를 생성하세요.
 
 ```sql
 CREATE DATABASE IF NOT EXISTS sporty;
 ```
 
-시연용 초기 데이터 브랜치(PR #102) 사용 시에는 기존 데이터 보호를 위해 **별도 DB**를 권장합니다.
+시연용 데이터 초기화 브랜치(아래 **초기 데이터** 참고)를 사용하는 경우, 기존 데이터를 보호하기 위해 별도 DB를 권장합니다.
 
 ```sql
 CREATE DATABASE IF NOT EXISTS sporty_demo;
 ```
 
-`develop`의 JPA 설정은 `ddl-auto: update`이며, Hibernate가 엔티티를 기준으로 테이블을 생성·갱신합니다. 기존 DB에 데이터가 있는 경우에는 스키마 변경 영향을 별도로 확인하세요.
+- 기본 MariaDB 포트는 `3306`을 예시로 사용합니다. 실제 포트가 다르다면 `DB_URL`을 조정하세요.
+- 기존 `develop` 코드의 `ddl-auto`는 `update`이며, Hibernate가 엔티티를 기준으로 테이블을 생성·변경할 수 있습니다.
+- **시연용 초기화 코드(PR #102)의 `ddl-auto: create-drop`은 기존 테이블과 데이터를 삭제할 수 있습니다.** 반드시 테스트 전용 DB에서만 사용하세요.
 
-## 5. 백엔드 환경변수 설정
+## 4. 백엔드 환경변수 설정
 
-저장소 **루트**에서:
+저장소 루트에서 `.env.example`을 복사합니다.
 
 ```bash
 cp backend/sporty/.env.example backend/sporty/.env
 ```
 
-`backend/sporty/.env`의 값을 자신의 환경에 맞게 입력합니다. 예시 변수명:
+`backend/sporty/.env`에서 실제 접속 정보와 API 키를 입력하세요. 기존 `application-dev.yml`이 참조하는 주요 변수는 다음과 같습니다.
 
 ```dotenv
 DB_DRIVER=org.mariadb.jdbc.Driver
 DB_URL=jdbc:mariadb://localhost:3306/sporty
 DB_USERNAME=root
-DB_PASSWORD=your_db_password
+DB_PASSWORD=
 
-OPEN_AI_KEY=your_openai_api_key
-OPEN_AI_MODEL=your_model_name
-JWT_SECRET_KEY=your_jwt_secret
+OPEN_AI_KEY=
+OPEN_AI_MODEL=
+JWT_SECRET_KEY=
 
-OPENAPI_SERVICE_KEY=your_api_key
-OPENAPI_CALLBACKURL=your_callback_url
-OPENAPI_TYPE=your_api_type
-
-PUBLIC_DATA_API_KEY=your_public_data_api_key
-PUBLIC_DATA_API_URL=your_public_data_api_base_url
+PUBLIC_DATA_API_KEY=
+PUBLIC_DATA_API_URL=
 ```
 
-- PR #102 시연용으로 실행한다면 `DB_URL`의 DB명을 `sporty_demo`로 변경하세요.
-- 위의 `your_...` 값은 **예시 문자열**입니다. 실제 동작하려면 유효한 값으로 교체해야 합니다.
-- OpenAI 키가 없어도 어떤 기능까지 실행 가능한지는 검증되지 않았습니다. 설정값이 누락되면 애플리케이션 시작이 실패할 수 있습니다.
-- 실제 비밀값이 포함된 `.env`는 **Git에 커밋하지 않습니다.**
-- `application-dev.yml`은 백엔드 실행 디렉터리의 `.env`를 읽도록 구성되어 있습니다.
+- `DB_USERNAME`과 `DB_PASSWORD`는 **자신의 MariaDB 계정 정보**로 변경해야 합니다.
+- 시연용 DB를 사용한다면 `DB_URL`을 `jdbc:mariadb://localhost:3306/sporty_demo`로 변경합니다.
+- `OPEN_AI_KEY`는 **OpenAI API 키**, `PUBLIC_DATA_API_KEY`는 **서울시 체육시설 공공데이터 API 인증키**입니다. 서로 다른 키입니다.
+- `OPEN_AI_MODEL`, `PUBLIC_DATA_API_URL`은 프로젝트에서 사용하는 유효한 값으로 설정해야 합니다.
+- 기존 설정 파일에는 `OPENAPI_SERVICE_KEY`, `OPENAPI_CALLBACKURL`, `OPENAPI_TYPE`도 선언되어 있습니다. 확인한 체육시설 API 클라이언트는 이들 대신 `PUBLIC_DATA_API_KEY` 및 `PUBLIC_DATA_API_URL`을 사용합니다. 이전 설정을 정리하기 전까지는 다른 사용처가 있는지 추가로 확인하세요.
+- API 키나 비밀번호를 `.env.example`, README, Git 커밋에 넣지 마세요.
 
-## 6. 백엔드 실행
+> **주의:** `.env`가 없거나 필수 설정값이 비어 있으면 Spring Boot 시작에 실패할 수 있습니다. 위 예시의 빈 값은 실제 운영 값이 아닙니다.
 
-새 터미널에서:
+## 5. 백엔드 실행
+
+새 터미널에서 **`backend/sporty` 디렉터리**로 이동합니다.
 
 ```bash
 cd backend/sporty
 ./gradlew.bat bootRun
 ```
 
-- 서버 포트: **8000** (`application-dev.yml` 기준)
-- 기본 Spring 프로필: **dev**
-- macOS/Linux에서는 `./gradlew bootRun`을 사용합니다.
-- 최초 실행에는 Gradle 의존성 다운로드가 필요할 수 있습니다.
+- Windows 명령 프롬프트에서는 `gradlew.bat bootRun`, macOS/Linux에서는 `./gradlew bootRun`을 사용하세요.
+- 기본 프로필: `dev`
+- 백엔드 주소: **`http://localhost:8000`**
+- 최초 실행 시 Gradle 의존성 다운로드가 필요할 수 있습니다.
 
-> `backend/`가 아니라 **`backend/sporty/`**에서 실행해야 합니다.
+`backend/`가 아니라 **`backend/sporty/`에서 실행**해야 합니다.
 
-## 7. 프론트엔드 실행
+## 6. 프론트엔드 환경변수 및 실행
 
-다른 터미널에서 저장소 루트로 이동한 후:
+**프론트엔드에도 별도의 `.env` 파일이 필요합니다.** 백엔드의 `.env` 설정만으로는 React의 API 주소가 설정되지 않습니다.
+
+저장소 루트에서:
 
 ```bash
 cp frontend/.env.example frontend/.env
@@ -165,59 +152,72 @@ npm ci
 npm start
 ```
 
-프론트엔드 환경변수:
+`frontend/.env`에 다음 값이 들어 있는지 확인하세요.
 
 ```dotenv
 REACT_APP_BACKEND_ENDPOINT=http://localhost:8000
 ```
 
-- `frontend/package-lock.json`이 있으므로 `npm ci`를 우선 권장합니다.
-- `'react-scripts'은(는) ... 아닙니다` 오류가 발생하면 `frontend/`에서 `npm ci`가 정상 완료되었는지 확인하세요.
-- 환경변수를 변경했다면 프론트엔드 개발 서버를 다시 시작해야 합니다.
+- 프론트엔드 기본 주소: **`http://localhost:3000`**
+- **백엔드는 8000번 포트**, 프론트엔드는 3000번 포트입니다.
+- `.env.example`은 참고용 템플릿이므로 **실제 `.env` 파일을 따로 생성**해야 합니다.
+- Create React App은 시작 시 환경변수를 읽습니다. **`.env`를 수정했다면 `npm start`를 종료(`Ctrl+C`)하고 재실행**하세요.
+- `frontend/package-lock.json`이 있으므로 우선 `npm ci`를 사용하세요.
+- `'react-scripts'은(는) ... 아닙니다` 오류가 발생하면 `frontend/`에서 `npm ci`가 성공했는지 확인하세요.
 
-## 8. 시연용 데이터와 주의사항
+**프론트엔드에 실제 API 비밀키를 넣지 마세요.** `REACT_APP_`으로 시작하는 환경변수 값은 프론트엔드 빌드 결과물에 포함되어 사용자가 확인할 수 있습니다. 기존에 사용하던 `REACT_APP_ACCESS_TOKEN`, `REACT_APP_RT`, `REACT_APP_GPT_KEY` 등의 테스트 값은 기본 실행에 필요하지 않습니다. 로그인 시 발급받는 토큰은 별도 인증 로직에서 관리합니다.
 
-PR #102의 자동 초기화 버전을 사용하면 다음 동작을 의도합니다.
+### 로그인 요청 주소 확인
 
-1. `data.sql`을 통해 데모 사용자·프로필·선호 종목을 초기화
-2. 애플리케이션 시작 시 서울시 체육시설 데이터를 동기화
-3. 동기화된 실제 시설을 참조하여 데모 운동 매치 생성
+브라우저 개발자 도구(`F12`) → **Network**에서 로그인 요청을 확인하세요.
 
-PR 코드에 기재된 **시연 전용** 로그인 계정은 다음과 같습니다.
+- 정상: `POST http://localhost:8000/api/auth/login`
+- 잘못된 설정의 예: `POST http://localhost:3000/api/auth/login`
 
-| 계정 | 이메일 | 비밀번호 |
-| --- | --- | --- |
-| 데모 사용자 1 | `a@b.c` | `1234567890` |
-| 데모 사용자 2 | `b@c.d` | `1234567890` |
+3000번 포트로 API 요청이 전송된다면 `frontend/.env`의 `REACT_APP_BACKEND_ENDPOINT`가 설정되었는지 확인하고 React 개발 서버를 재시작하세요.
 
-> 이 계정과 비밀번호는 로컬 시연에만 사용하세요. 공개 배포 환경에서 사용하면 안 됩니다. 시설 API 동기화나 초기화가 실패하면 매치 데이터가 생성되지 않을 수 있습니다.
+과거 로그인 정보가 브라우저에 남아 있으면, 새 DB로 실행한 뒤에도 마이페이지가 로그인 상태로 표시될 수 있습니다. 이 경우 해당 사이트의 저장된 로그인 정보를 지우고 테스트하세요.
 
-## 9. 문제 해결
+## 7. 초기 데이터 / 시연용 브랜치 (선택 사항)
 
-| 증상 | 먼저 확인할 것 |
+기존 1차 프로젝트 저장소의 [PR #102 — 앱 시작 시 데이터 구성](https://github.com/livelykitten/inspire_6th_mini_1_sporty/pull/102)은 다음 코드를 추가합니다.
+
+1. `data.sql`을 이용한 시연용 사용자·프로필·선호 종목 생성
+2. 애플리케이션 시작 시 서울시 체육시설 데이터 동기화
+3. 동기화된 시설을 참조하는 데모 운동 매치 생성
+
+이 PR은 **원본 1차 프로젝트의 `feat/fetch-at-startup` 브랜치**에 있으며, 원본 `develop`에는 병합되지 않았습니다. **현재 2차 프로젝트 저장소에 해당 코드가 포함되어 있는지는 브랜치를 직접 확인**해야 합니다.
+
+> **데이터 삭제 주의:** PR #102는 `ddl-auto: create-drop`을 사용합니다. 기존 데이터를 보관해야 하는 DB에서는 실행하지 마세요. 또한 외부 시설 API 동기화가 실패하면 시연용 매치가 준비되지 않을 수 있습니다.
+
+## 8. 문제 해결
+
+| 증상 | 확인 사항 |
 | --- | --- |
-| `react-scripts` 명령을 찾을 수 없음 | `frontend/`에서 `npm ci` 실행 여부 |
-| 백엔드 실행 명령이 실패함 | 현재 경로가 `backend/sporty/`인지, JDK 17 사용 중인지 |
-| Redis 접속 실패 | Docker Desktop 실행 여부, `docker compose ps`, 6379 포트 충돌 |
-| MariaDB 연결 실패 | DB 실행 상태, DB명, `DB_URL`, DB 사용자·비밀번호 |
-| 프론트 API 요청 실패 | 백엔드 8000 포트, `REACT_APP_BACKEND_ENDPOINT`, 브라우저 개발자 도구 |
-| AI 기능 동작 실패 | `OPEN_AI_KEY`, `OPEN_AI_MODEL`, 외부 API 연결 및 오류 로그 |
-| 시설·매치가 보이지 않음 | PR #102 사용 여부, 공공 API 설정, 시작 시 동기화 오류 로그 |
+| `go-yaml load error` | `compose.yaml` 들여쓰기·콜론 확인 후 `docker compose config` 실행 |
+| Redis 포트 충돌 | 기존 Redis 컨테이너/프로세스가 `6379` 사용 중인지 확인 |
+| MariaDB 연결 실패 | 로컬 DB 실행 상태, DB명, `DB_URL`, 계정·비밀번호 확인 |
+| 백엔드 실행 실패 | `backend/sporty` 경로, JDK 17, `.env` 설정 및 로그 확인 |
+| `react-scripts` 명령을 찾을 수 없음 | `frontend/`에서 `npm ci` 실행 |
+| 로그인 API가 `localhost:3000`으로 전송됨 | `frontend/.env`의 `REACT_APP_BACKEND_ENDPOINT` 설정 후 `npm start` 재시작 |
+| 로그인/마이페이지가 예상과 다르게 동작 | 브라우저에 남아 있는 로그인 토큰 및 Network 요청·응답 확인 |
+| AI 기능 실패 | `OPEN_AI_KEY`, `OPEN_AI_MODEL`, API 결제·권한 및 서버 로그 확인 |
+| 시설/매치 데이터 없음 | 초기 데이터 코드 포함 여부, 공공데이터 API 설정, 동기화 로그 확인 |
 
 ## Git 규칙
 
-기능 개발은 별도 브랜치에서 진행하고 Pull Request로 합칩니다.
+기존 프로젝트에서는 기능별 브랜치와 Pull Request를 사용했습니다.
 
 ```bash
 git switch -c feature/<issue-number>-<feature-name>
 ```
 
-커밋 메시지는 `feat:`, `fix:`, `docs:`, `test:`, `refactor:`, `chore:` 등으로 분류하는 형식을 권장합니다.
+커밋 메시지는 `feat:`, `fix:`, `docs:`, `test:`, `refactor:`, `chore:` 등의 접두사를 권장합니다. **2차 프로젝트에서는 새 팀의 브랜치 및 PR 규칙을 우선합니다.**
 
 ## 프로젝트 문서
 
-요구사항 명세, API 명세, 테스트 케이스 등 기존 산출물은 `docs/`에서 확인하세요.
+기존 요구사항 명세, API 명세, 테스트 케이스 등 프로젝트 산출물은 `docs/`에 있습니다.
 
 ---
 
-**현재 상태:** 이 README는 저장소 코드와 PR #102를 확인하여 작성한 *실행 가이드 초안*입니다. 다른 개발자 PC에서의 전체 실행 및 시연 데이터 생성 성공 여부는 아직 별도로 검증해야 합니다.
+**검증 상태:** 이 문서는 기존 프로젝트 코드와 설정에 근거한 로컬 실행 가이드입니다. 팀원 개별 PC에서 Redis, MariaDB, 백엔드, 프론트엔드 및 초기 데이터가 모두 정상 동작하는지는 각 환경에서 확인해야 합니다.
