@@ -37,4 +37,4 @@ management:
         include: health,info
 
 jwt:
-    secret: 329361eed1637b6a6b9bbeb7ae974bc735e8f899c26d5f2eba580db2f9a20df6
+    secret: ${JWT_SECRET_KEY:default_secret_key}
