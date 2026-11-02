@@ -16,6 +16,11 @@ spring:
         native:
           search-locations: ${CONFIG_REPO_PATH:file:../../config-repo}
 
+# W-25 설정 암호화: config-repo 의 '{cipher}...' 값을 이 키로 풀어서 서비스에 넘긴다.
+# 키는 .env 의 ENCRYPT_KEY (로컬 = .env.example 값, 배포 = 서버 .env · 디코 DM). 비어 있으면 암호화 기능이 꺼진다
+encrypt:
+  key: ${ENCRYPT_KEY:}
+
 eureka:
   client:
     enabled: ${EUREKA_ENABLED:true}
