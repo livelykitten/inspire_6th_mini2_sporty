@@ -96,6 +96,21 @@ class FacilityServiceControllerTest {
     }
 
     @Test
+    @DisplayName("FC-01: 시작시간이 종료시간보다 늦으면 400과 안내 메시지를 반환한다")
+    void getServicesWithInvalidTimeRange() throws Exception {
+        when(facilityQueryService.getFacilities(any(ServiceRequestDto.class)))
+                .thenThrow(new IllegalArgumentException("시작시간은 종료시간보다 늦을 수 없습니다."));
+
+        mvc.perform(get("/api/services")
+                        .param("startTime", "20:00")
+                        .param("endTime", "10:00"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_SEARCH_CONDITION"))
+                .andExpect(jsonPath("$.message")
+                        .value("시작시간은 종료시간보다 늦을 수 없습니다."));
+    }
+
+    @Test
     @DisplayName("FC-02: DB 서비스 ID로 상세 정보를 조회한다")
     void getServiceDetail() throws Exception {
         ServiceDetailResponseDto response = ServiceDetailResponseDto.builder()
