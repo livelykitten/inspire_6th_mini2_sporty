@@ -4,7 +4,6 @@ import com.example.sporty.features.commons.exception.profiles.ProfileNotFoundExc
 import com.example.sporty.features.commons.exception.users.DuplicateEmailException;
 import com.example.sporty.features.commons.exception.users.DuplicateNicknameException;
 import com.example.sporty.features.auth.service.RefreshTokenService;
-import com.example.sporty.features.exerciseMatching.service.MatchService;
 import com.example.sporty.features.commons.exception.users.PasswordMismatchException;
 import com.example.sporty.features.commons.exception.users.UserNotFoundException;
 import com.example.sporty.features.commons.util.SportType;
@@ -35,8 +34,7 @@ public class UserService {
     private final SportPreferenceRepository sportPreferenceRepository;
     private final PasswordEncoder passwordEncoder;
     private final RefreshTokenService refreshTokenService;
-    private final MatchService matchService;
-
+    
     // [USR-01] 회원가입
     public void signUp(UserSignUpRequestDto request) {
 
@@ -123,10 +121,7 @@ public class UserService {
         if (!passwordEncoder.matches(password,user.getPassword())) {
             throw new PasswordMismatchException();
         }
-
-        // 같은 트랜잭션에서 생성 매치와 참가 기록을 먼저 정리한다.
-        matchService.removeMatchesForWithdrawal(id);
-
+        
         // 4. 탈퇴 처리(변경 감지) || 회원 상태를 탈퇴 상태로 변경, Refresh Token 삭제
         user.withdraw();
         refreshTokenService.delete(id);
