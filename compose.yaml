@@ -96,7 +96,7 @@ services:
       start_period: 15s
     restart: unless-stopped
 
-  # 토픽 4개 + DLT 를 만들고 끝나는 일회성 컨테이너. 이미 있으면 건너뛴다.
+  # 토픽 4개와 각 토픽의 DLT({토픽}.DLT) 를 만들고 끝나는 일회성 컨테이너. 이미 있으면 건너뛴다.
   kafka-init:
     image: apache/kafka:3.9.1
     depends_on:
@@ -106,8 +106,9 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
-        for t in facility.service.changed facility.service.changed.DLT user.withdrawal.requested match.withdrawal.completed match.withdrawal.failed; do
+        for t in facility.service.changed user.withdrawal.requested match.withdrawal.completed match.withdrawal.failed; do
           /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --create --if-not-exists --topic "$$t" --partitions 1 --replication-factor 1
+          /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --create --if-not-exists --topic "$$t.DLT" --partitions 1 --replication-factor 1
         done
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --list
 

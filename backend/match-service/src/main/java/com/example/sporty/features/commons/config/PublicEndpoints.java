@@ -20,12 +20,10 @@ public final class PublicEndpoints {
                             .matcher(HttpMethod.GET, "/api/matches/me")));
 
     public static final RequestMatcher MATCHER = new OrRequestMatcher(
-            PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, "/api/users"),
-            PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, "/api/auth/login"),
-            PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, "/api/auth/refresh"),
-            PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, "/api/ai/matches/search"),
             PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, "/api/matches"),
             MATCH_DETAIL,
-            PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, "/api/services"),
-            PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, "/api/services/{serviceId}"));
+            PathPatternRequestMatcher.withDefaults().matcher("/actuator/health"),
+            PathPatternRequestMatcher.withDefaults().matcher("/actuator/health/**"),
+            PathPatternRequestMatcher.withDefaults().matcher("/error"),
+            PathPatternRequestMatcher.withDefaults().matcher("/internal/**"));
 }

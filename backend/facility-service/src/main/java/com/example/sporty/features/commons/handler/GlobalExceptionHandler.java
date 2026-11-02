@@ -21,8 +21,11 @@ import com.example.sporty.features.commons.exception.users.PasswordMismatchExcep
 import com.example.sporty.features.commons.exception.users.UserNotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import com.example.sporty.features.commons.exception.ai.AiDraftException;
 import com.example.sporty.features.commons.exception.ai.AiRecommendException;
@@ -257,6 +260,33 @@ public class GlobalExceptionHandler {
                 .body(ErrorResponse.builder()
                         .code("INVALID_REFRESH_TOKEN")
                         .message(e.getMessage())
+                        .build());
+    }
+
+    // 존재하지 않는 경로는 Spring이 던지는 404를 그대로 유지한다.
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ErrorResponse> handleNoResourceFound(NoResourceFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.builder()
+                        .message("요청하신 경로를 찾을 수 없습니다.")
+                        .build());
+    }
+
+    // 지원하지 않는 HTTP 메서드는 405를 그대로 유지한다.
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ErrorResponse> handleMethodNotSupported(HttpRequestMethodNotSupportedException e) {
+        return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
+                .body(ErrorResponse.builder()
+                        .message(e.getMessage())
+                        .build());
+    }
+
+    // 요청 본문을 읽을 수 없는 경우는 400을 그대로 유지한다.
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponse> handleMessageNotReadable(HttpMessageNotReadableException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.builder()
+                        .message("요청 본문을 읽을 수 없습니다.")
                         .build());
     }
 

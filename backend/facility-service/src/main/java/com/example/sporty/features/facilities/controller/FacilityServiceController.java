@@ -66,4 +66,14 @@ public class FacilityServiceController {
                     .message("서비스 ID 형식이 올바르지 않습니다. 숫자로 입력해주세요.")
                     .build());
     }
+
+    // 시작시간이 종료시간보다 늦는 등 잘못된 검색 조건은 400으로 안내한다.
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidSearchCondition(IllegalArgumentException e) {
+        return ResponseEntity.badRequest()
+            .body(ErrorResponse.builder()
+                    .code("INVALID_SEARCH_CONDITION")
+                    .message(e.getMessage())
+                    .build());
+    }
 }
