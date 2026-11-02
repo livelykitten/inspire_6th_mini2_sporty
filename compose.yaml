@@ -1,6 +1,119 @@
+# W-06 로컬 인프라: 서비스당 MariaDB 1대 + Redis + Kafka(KRaft 단일 노드).
+# 값은 .env (없으면 아래 기본값) 에서 읽는다. 기본값만으로 `docker compose up -d --wait` 가 동작한다.
+#
+# 호스트 포트: user-db 3306 · match-db 3307 · facility-db 3308 · redis 6379 · kafka 9092
+# 컨테이너 안에서는 서비스 이름으로 부른다: user-db:3306 · match-db:3306 · facility-db:3306 · redis:6379 · kafka:29092
+
+x-mariadb: &mariadb
+  image: mariadb:11
+  command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+  healthcheck:
+    test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+    interval: 5s
+    timeout: 3s
+    retries: 20
+  restart: unless-stopped
+
 services:
+  user-db:
+    <<: *mariadb
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-root}
+      MARIADB_DATABASE: user_db
+      MARIADB_USER: ${USER_DB_USER:-user_svc}
+      MARIADB_PASSWORD: ${USER_DB_PASSWORD:-user_svc}
+      TZ: Asia/Seoul
+    ports:
+      - "${USER_DB_PORT:-3306}:3306"
+    volumes:
+      - user-db-data:/var/lib/mysql
+
+  match-db:
+    <<: *mariadb
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-root}
+      MARIADB_DATABASE: match_db
+      MARIADB_USER: ${MATCH_DB_USER:-match_svc}
+      MARIADB_PASSWORD: ${MATCH_DB_PASSWORD:-match_svc}
+      TZ: Asia/Seoul
+    ports:
+      - "${MATCH_DB_PORT:-3307}:3306"
+    volumes:
+      - match-db-data:/var/lib/mysql
+
+  facility-db:
+    <<: *mariadb
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-root}
+      MARIADB_DATABASE: facility_db
+      MARIADB_USER: ${FACILITY_DB_USER:-facility_svc}
+      MARIADB_PASSWORD: ${FACILITY_DB_PASSWORD:-facility_svc}
+      TZ: Asia/Seoul
+    ports:
+      - "${FACILITY_DB_PORT:-3308}:3306"
+    volumes:
+      - facility-db-data:/var/lib/mysql
+
+  # refresh token (user-service 전용)
   redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
     restart: unless-stopped
+
+  # IDE 에서 띄우는 서비스는 localhost:9092, 컨테이너로 띄우는 서비스는 kafka:29092 를 쓴다.
+  kafka:
+    image: apache/kafka:3.9.1
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENERS: INTERNAL://:29092,EXTERNAL://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_NUM_PARTITIONS: 1
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list > /dev/null"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 15s
+    restart: unless-stopped
+
+  # 토픽 4개와 각 토픽의 DLT({토픽}.DLT) 를 만들고 끝나는 일회성 컨테이너. 이미 있으면 건너뛴다.
+  kafka-init:
+    image: apache/kafka:3.9.1
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        for t in facility.service.changed user.withdrawal.requested match.withdrawal.completed match.withdrawal.failed; do
+          /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --create --if-not-exists --topic "$$t" --partitions 1 --replication-factor 1
+          /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --create --if-not-exists --topic "$$t.DLT" --partitions 1 --replication-factor 1
+        done
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --list
+
+volumes:
+  user-db-data:
+  match-db-data:
+  facility-db-data:
+  kafka-data:
