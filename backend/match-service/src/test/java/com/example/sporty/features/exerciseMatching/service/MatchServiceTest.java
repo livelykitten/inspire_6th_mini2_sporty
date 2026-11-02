@@ -11,6 +11,7 @@ import static org.mockito.Mockito.never;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import org.junit.jupiter.api.DisplayName;
@@ -28,6 +29,8 @@ import com.example.sporty.features.commons.exception.exerciseMatching.MatchOwner
 import com.example.sporty.features.commons.exception.exerciseMatching.MatchParticipantNotFoundException;
 import com.example.sporty.features.commons.util.SportType;
 import com.example.sporty.features.exerciseMatching.domain.dto.MatchDetailResponseDto;
+import com.example.sporty.features.exerciseMatching.client.MemberLookup;
+import com.example.sporty.features.exerciseMatching.client.MemberProfile;
 import com.example.sporty.features.exerciseMatching.domain.entity.MatchEntity;
 import com.example.sporty.features.exerciseMatching.domain.entity.MatchParticipantEntity;
 import com.example.sporty.features.exerciseMatching.domain.enums.MatchParticipantRole;
@@ -36,11 +39,7 @@ import com.example.sporty.features.exerciseMatching.domain.enums.SkillLevel;
 import com.example.sporty.features.exerciseMatching.domain.enums.GenderGroup;
 import com.example.sporty.features.exerciseMatching.repository.MatchParticipantRepository;
 import com.example.sporty.features.exerciseMatching.repository.MatchRepository;
-import com.example.sporty.features.profiles.domain.entity.ProfileEntity;
-import com.example.sporty.features.profiles.repository.ProfileRepository;
-import com.example.sporty.features.users.domain.entity.UserEntity;
-import com.example.sporty.features.users.repository.UserRepository;
-import com.example.sporty.features.facilities.repository.ServiceRepository;
+import com.example.sporty.features.exerciseMatching.repository.FacilityServiceSnapshotRepository;
 import com.example.sporty.support.FacilityFixtures;
 
 @ExtendWith(MockitoExtension.class)
@@ -53,13 +52,10 @@ class MatchServiceTest {
     private MatchParticipantRepository matchParticipantRepository;
 
     @Mock
-    private ProfileRepository profileRepository;
+    private MemberLookup memberLookup;
 
     @Mock
-    private UserRepository userRepository;
-
-    @Mock
-    private ServiceRepository serviceRepository;
+    private FacilityServiceSnapshotRepository facilityServiceSnapshotRepository;
 
     @InjectMocks
     private MatchService matchService;
@@ -87,9 +83,9 @@ class MatchServiceTest {
                 participant(1L, MatchParticipantRole.OWNER),
                 participant(2L, MatchParticipantRole.PARTICIPANT)));
         // 프로필 조회 순서가 달라도 사용자 ID로 연결해야 한다.
-        when(profileRepository.findAllByUser_IdIn(List.of(1L, 2L))).thenReturn(List.of(
-                profile(2L, 402L, "참가자", null),
-                profile(1L, 401L, "생성자", "https://example.com/owner.png")));
+        when(memberLookup.getProfiles(List.of(1L, 2L))).thenReturn(Map.of(
+                2L, profile(402L, "참가자", null),
+                1L, profile(401L, "생성자", "https://example.com/owner.png")));
 
         MatchDetailResponseDto response = matchService.getMatchDetail(101L, null);
 
@@ -121,7 +117,7 @@ class MatchServiceTest {
         assertThat(response.getServiceName()).isEqualTo("Test service 7");
         assertThat(response.getLocationName()).isEqualTo("Test location");
         assertThat(response.getRegion()).isEqualTo("강남구");
-        verify(profileRepository).findAllByUser_IdIn(List.of(1L, 2L));
+        verify(memberLookup).getProfiles(List.of(1L, 2L));
     }
 
     @Test
@@ -137,7 +133,7 @@ class MatchServiceTest {
         assertThat(response.getParticipants()).isEmpty();
         assertThat(response.getIsOwner()).isFalse();
         assertThat(response.getIsParticipant()).isFalse();
-        verifyNoInteractions(profileRepository);
+        verifyNoInteractions(memberLookup);
     }
 
     @Test
@@ -149,7 +145,7 @@ class MatchServiceTest {
                 () -> matchService.getMatchDetail(999999L, null));
 
         assertThat(exception.getMessage()).isEqualTo("매치를 찾을 수 없습니다.");
-        verifyNoInteractions(matchParticipantRepository, profileRepository);
+        verifyNoInteractions(matchParticipantRepository, memberLookup);
     }
 
     @ParameterizedTest
@@ -160,7 +156,7 @@ class MatchServiceTest {
         when(matchParticipantRepository.findAllByMatch_IdOrderByIdAsc(101L)).thenReturn(List.of(
                 participant(1L, MatchParticipantRole.OWNER),
                 participant(2L, MatchParticipantRole.PARTICIPANT)));
-        when(profileRepository.findAllByUser_IdIn(List.of(1L, 2L))).thenReturn(List.of());
+        when(memberLookup.getProfiles(List.of(1L, 2L))).thenReturn(Map.of());
 
         MatchDetailResponseDto response = matchService.getMatchDetail(101L, userId);
 
@@ -174,7 +170,7 @@ class MatchServiceTest {
         when(matchRepository.findById(101L)).thenReturn(Optional.of(MatchEntity.builder().id(101L).service(FacilityFixtures.service(7L, true)).build()));
         when(matchParticipantRepository.findAllByMatch_IdOrderByIdAsc(101L))
                 .thenReturn(List.of(participant(1L, MatchParticipantRole.OWNER)));
-        when(profileRepository.findAllByUser_IdIn(List.of(1L))).thenReturn(List.of());
+        when(memberLookup.getProfiles(List.of(1L))).thenReturn(Map.of());
 
         MatchDetailResponseDto response = matchService.getMatchDetail(101L, 1L);
 
@@ -194,8 +190,8 @@ class MatchServiceTest {
         when(matchRepository.findById(101L)).thenReturn(Optional.of(MatchEntity.builder().id(101L).service(FacilityFixtures.service(7L, true)).build()));
         when(matchParticipantRepository.findAllByMatch_IdOrderByIdAsc(101L))
                 .thenReturn(List.of(participant(1L, MatchParticipantRole.OWNER)));
-        when(profileRepository.findAllByUser_IdIn(List.of(1L)))
-                .thenReturn(List.of(profile(1L, 2147483648L, "생성자", null)));
+        when(memberLookup.getProfiles(List.of(1L)))
+                .thenReturn(Map.of(1L, profile(2147483648L, "생성자", null)));
 
         assertThat(matchService.getMatchDetail(101L, null).getParticipants().get(0).getProfileId())
                 .isEqualTo(2147483648L);
@@ -209,7 +205,7 @@ class MatchServiceTest {
                 .startAt(LocalDateTime.now().plusHours(startOffsetHours))
                 .status(status).build();
         MatchParticipantEntity participant = MatchParticipantEntity.builder()
-                .id(10L).match(match).user(UserEntity.builder().id(2L).build()).role(MatchParticipantRole.PARTICIPANT).build();
+                .id(10L).match(match).userId(2L).role(MatchParticipantRole.PARTICIPANT).build();
         when(matchRepository.findByIdForUpdate(301L)).thenReturn(Optional.of(match));
         when(matchParticipantRepository.findByMatch_IdAndUserId(301L, 2L))
                 .thenReturn(Optional.of(participant));
@@ -220,7 +216,7 @@ class MatchServiceTest {
         verify(matchParticipantRepository).findByMatch_IdAndUserId(301L, 2L);
         verify(matchParticipantRepository).delete(participant);
         verifyNoMoreInteractions(matchRepository, matchParticipantRepository);
-        verifyNoInteractions(profileRepository);
+        verifyNoInteractions(memberLookup);
         assertThat(match.getStatus()).isEqualTo(status);
     }
 
@@ -236,7 +232,7 @@ class MatchServiceTest {
         verify(matchRepository).findByIdForUpdate(303L);
         verify(matchParticipantRepository).findByMatch_IdAndUserId(303L, 1L);
         verifyNoMoreInteractions(matchRepository, matchParticipantRepository);
-        verifyNoInteractions(profileRepository);
+        verifyNoInteractions(memberLookup);
     }
 
     @Test
@@ -250,7 +246,7 @@ class MatchServiceTest {
         verify(matchRepository).findByIdForUpdate(304L);
         verify(matchParticipantRepository).findByMatch_IdAndUserId(304L, 5L);
         verifyNoMoreInteractions(matchRepository, matchParticipantRepository);
-        verifyNoInteractions(profileRepository);
+        verifyNoInteractions(memberLookup);
     }
 
     @Test
@@ -262,7 +258,7 @@ class MatchServiceTest {
 
         verify(matchRepository).findByIdForUpdate(99999L);
         verifyNoMoreInteractions(matchRepository);
-        verifyNoInteractions(matchParticipantRepository, profileRepository);
+        verifyNoInteractions(matchParticipantRepository, memberLookup);
     }
 
     @ParameterizedTest
@@ -293,17 +289,12 @@ class MatchServiceTest {
 
     private MatchParticipantEntity participant(Long userId, MatchParticipantRole role) {
         return MatchParticipantEntity.builder()
-                .user(UserEntity.builder().id(userId).build())
+                .userId(userId)
                 .role(role)
                 .build();
     }
 
-    private ProfileEntity profile(Long userId, Long profileId, String nickname, String imageUrl) {
-        return ProfileEntity.builder()
-                .id(profileId)
-                .user(UserEntity.builder().id(userId).build())
-                .nickname(nickname)
-                .imageUrl(imageUrl)
-                .build();
+    private MemberProfile profile(Long profileId, String nickname, String imageUrl) {
+        return new MemberProfile(profileId, nickname, imageUrl);
     }
 }

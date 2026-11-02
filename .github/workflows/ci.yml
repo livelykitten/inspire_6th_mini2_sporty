@@ -25,8 +25,8 @@ jobs:
           - { service: discovery-service, wip: false }
           - { service: config-service, wip: false }
           - { service: facility-service, wip: false }
-          - { service: user-service, wip: false } # W-07
-          - { service: match-service, wip: true } # W-08
+          - { service: user-service, wip: true } # W-07
+          - { service: match-service, wip: false } # W-08
           - { service: ai-service, wip: true } # W-10
     defaults:
       run:
