@@ -61,8 +61,8 @@ public class MatchResponseDto {
             .skillLevel(entity.getSkillLevel())
             .sportType(entity.getSportType())
             .genderGroup(entity.getGenderGroup())
-            .region(entity.getService().getLocation().getRegion()) // TODO
-            .isFree(entity.getService().getIsFree()) // TODO: CHAR가 맞는지, erd에 적힌 Y/N이 맞는지 확인
+            .region(entity.getService().getRegion())
+            .isFree(entity.getService().getIsFree())
             .distance(null) // TODO
             .build();
     }
