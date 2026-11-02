@@ -18,8 +18,7 @@ public interface MatchClient {
     @GetMapping("/api/matches")
     List<MatchResponseDto> searchMatches(@SpringQueryMap MatchSearchRequestDto request);
 
-    //이부분 나중에 api-gateway 인증방식에 따라 사용자 정보를 받아와야 함
-    //일단은 기존 인증에 받은 값을 사용
+    // Gateway 인증으로 받은 사용자 ID를 match-service에 전달한다.
     @GetMapping("/api/matches/me")
     List<MyMatchResponseDto> getMyMatches(@RequestHeader("X-User-Id") Long userId);
 }

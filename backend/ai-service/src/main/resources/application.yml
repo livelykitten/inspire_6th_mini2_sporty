@@ -15,6 +15,7 @@ spring:
     import:
       - "optional:file:./.env[.properties]"
       - "optional:file:../.env[.properties]"
+      - "optional:file:./ai-service/.env[.properties]"
       - "optional:configserver:"
   ai:
     retry:
