@@ -260,4 +260,11 @@ public class GlobalExceptionHandler {
                         .build());
     }
 
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ErrorResponse> handleUnexpected (Exception e) {
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(ErrorResponse.builder()
+                        .message(e.getMessage())
+                                .build());
+    }
 }
