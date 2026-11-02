@@ -7,11 +7,10 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import jakarta.persistence.EntityManager;
-import com.example.sporty.features.users.domain.entity.UserEntity;
 import com.example.sporty.features.exerciseMatching.domain.enums.GenderGroup;
 import com.example.sporty.support.MatchUserFixtures;
 import com.example.sporty.support.FacilityFixtures;
-import com.example.sporty.features.facilities.domain.entity.ServiceEntity;
+import com.example.sporty.features.exerciseMatching.domain.entity.FacilityServiceSnapshotEntity;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -26,6 +25,8 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import com.example.sporty.features.exerciseMatching.client.MemberLookup;
 
 import com.example.sporty.features.commons.exception.exerciseMatching.MatchNotFoundException;
 import com.example.sporty.features.commons.exception.exerciseMatching.MatchOwnerCannotLeaveException;
@@ -39,9 +40,12 @@ import com.example.sporty.features.exerciseMatching.repository.MatchParticipantR
 import com.example.sporty.features.exerciseMatching.repository.MatchRepository;
 
 @DataJpaTest(properties = {
-        "spring.jpa.hibernate.ddl-auto=create-drop",
+        "spring.jpa.hibernate.ddl-auto=none",
         "spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.H2Dialect",
-        "spring.jpa.properties.hibernate.auto_quote_keyword=true"
+        "spring.jpa.properties.hibernate.auto_quote_keyword=true",
+        "spring.sql.init.mode=always",
+        "spring.sql.init.schema-locations=classpath:schema-h2.sql",
+        "test.context-id=match-leave"
 })
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.ANY)
 @Import(MatchService.class)
@@ -64,11 +68,14 @@ class MatchLeaveIntegrationTest {
     @Autowired
     private EntityManager entityManager;
 
-    private Map<Long, UserEntity> users;
+    @MockitoBean
+    private MemberLookup memberLookup;
+
+    private Map<Long, Long> users;
     private Long serviceId;
 
     private Long userId(long label) {
-        return users.get(label).getId();
+        return users.get(label);
     }
 
     private Long matchId;
@@ -81,15 +88,15 @@ class MatchLeaveIntegrationTest {
             matchParticipantRepository.deleteAllInBatch();
             matchRepository.deleteAllInBatch();
             users = MatchUserFixtures.create(entityManager, 11);
-            serviceId = FacilityFixtures.create(entityManager, FacilityFixtures.newServiceId()).getId();
+            serviceId = FacilityFixtures.create(entityManager, FacilityFixtures.newServiceId()).getServiceId();
             MatchEntity match = matchRepository.save(MatchEntity.builder()
                     .title("삭제 대상").sportType(SportType.FUTSAL)
-                    .maxParticipant(5).genderGroup(GenderGroup.MIXED).service(entityManager.getReference(ServiceEntity.class, serviceId))
+                    .maxParticipant(5).genderGroup(GenderGroup.MIXED).service(entityManager.getReference(FacilityServiceSnapshotEntity.class, serviceId))
                     .startAt(LocalDateTime.now().plusDays(1)).endAt(LocalDateTime.now().plusDays(1).plusHours(2))
                     .build());
             MatchEntity otherMatch = matchRepository.save(MatchEntity.builder()
                     .title("유지 대상").sportType(SportType.FUTSAL)
-                    .maxParticipant(5).genderGroup(GenderGroup.MIXED).service(entityManager.getReference(ServiceEntity.class, serviceId))
+                    .maxParticipant(5).genderGroup(GenderGroup.MIXED).service(entityManager.getReference(FacilityServiceSnapshotEntity.class, serviceId))
                     .startAt(LocalDateTime.now().plusDays(1)).endAt(LocalDateTime.now().plusDays(1).plusHours(2))
                     .build());
             matchId = match.getId();
@@ -180,6 +187,6 @@ class MatchLeaveIntegrationTest {
     }
 
     private MatchParticipantEntity participant(MatchEntity match, Long userId, MatchParticipantRole role) {
-        return MatchParticipantEntity.builder().match(match).user(users.get(userId)).role(role).build();
+        return MatchParticipantEntity.builder().match(match).userId(users.get(userId)).role(role).build();
     }
 }

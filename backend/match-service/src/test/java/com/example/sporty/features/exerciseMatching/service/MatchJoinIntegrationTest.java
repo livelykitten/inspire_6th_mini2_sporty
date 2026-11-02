@@ -2,16 +2,16 @@ package com.example.sporty.features.exerciseMatching.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.doThrow;
 
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import jakarta.persistence.EntityManager;
-import com.example.sporty.features.users.domain.entity.UserEntity;
 import com.example.sporty.features.exerciseMatching.domain.enums.GenderGroup;
 import com.example.sporty.support.MatchUserFixtures;
 import com.example.sporty.support.FacilityFixtures;
-import com.example.sporty.features.facilities.domain.entity.ServiceEntity;
+import com.example.sporty.features.exerciseMatching.domain.entity.FacilityServiceSnapshotEntity;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -31,6 +31,8 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import com.example.sporty.features.exerciseMatching.client.MemberLookup;
 
 import com.example.sporty.features.commons.exception.exerciseMatching.MatchAlreadyJoinedException;
 import com.example.sporty.features.commons.exception.exerciseMatching.MatchAlreadyStartedException;
@@ -48,9 +50,12 @@ import com.example.sporty.features.exerciseMatching.repository.MatchParticipantR
 import com.example.sporty.features.exerciseMatching.repository.MatchRepository;
 
 @DataJpaTest(properties = {
-        "spring.jpa.hibernate.ddl-auto=create-drop",
+        "spring.jpa.hibernate.ddl-auto=none",
         "spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.H2Dialect",
-        "spring.jpa.properties.hibernate.auto_quote_keyword=true"
+        "spring.jpa.properties.hibernate.auto_quote_keyword=true",
+        "spring.sql.init.mode=always",
+        "spring.sql.init.schema-locations=classpath:schema-h2.sql",
+        "test.context-id=match-join"
 })
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.ANY)
 @Import(MatchService.class)
@@ -73,11 +78,14 @@ class MatchJoinIntegrationTest {
     @Autowired
     private EntityManager entityManager;
 
-    private Map<Long, UserEntity> users;
+    @MockitoBean
+    private MemberLookup memberLookup;
+
+    private Map<Long, Long> users;
     private Long serviceId;
 
     private Long userId(long label) {
-        return users.get(label).getId();
+        return users.get(label);
     }
 
     @BeforeEach
@@ -86,7 +94,7 @@ class MatchJoinIntegrationTest {
             matchParticipantRepository.deleteAllInBatch();
             matchRepository.deleteAllInBatch();
             users = MatchUserFixtures.create(entityManager, 11);
-            serviceId = FacilityFixtures.create(entityManager, FacilityFixtures.newServiceId()).getId();
+            serviceId = FacilityFixtures.create(entityManager, FacilityFixtures.newServiceId()).getServiceId();
         });
     }
 
@@ -99,7 +107,7 @@ class MatchJoinIntegrationTest {
         MatchParticipantResponseDto result = matchService.joinMatch(matchId, userId(2L));
 
         MatchParticipantEntity saved = matchParticipantRepository.findById(result.getMatchParticipantId()).orElseThrow();
-        assertThat(saved.getUser().getId()).isEqualTo(userId(2L));
+        assertThat(saved.getUserId()).isEqualTo(userId(2L));
         assertThat(saved.getRole()).isEqualTo(MatchParticipantRole.PARTICIPANT);
         assertThat(result.getMatchId()).isEqualTo(matchId);
         assertThat(saved.getCreatedAt()).isNotNull();
@@ -227,7 +235,7 @@ class MatchJoinIntegrationTest {
         assertThat(results.stream().filter(MatchAlreadyJoinedException.class::isInstance).count()).isEqualTo(1);
         assertState(matchId, 2, MatchStatus.RECRUITING);
         assertThat(matchParticipantRepository.findAllByMatch_IdOrderByIdAsc(matchId))
-                .filteredOn(participant -> participant.getUser().getId().equals(userId(2L))).hasSize(1);
+                .filteredOn(participant -> participant.getUserId().equals(userId(2L))).hasSize(1);
     }
 
     @Test
@@ -235,6 +243,7 @@ class MatchJoinIntegrationTest {
     void missingUserPreservesData() {
         Long matchId = createMatch(2, MatchStatus.RECRUITING, LocalDateTime.now().plusDays(1));
         List<Long> before = participantIds(matchId);
+        doThrow(new MatchUserNotFoundException()).when(memberLookup).validateActive(Long.MAX_VALUE);
 
         assertThatThrownBy(() -> matchService.joinMatch(matchId, Long.MAX_VALUE))
                 .isInstanceOf(MatchUserNotFoundException.class);
@@ -277,10 +286,10 @@ class MatchJoinIntegrationTest {
         return new TransactionTemplate(transactionManager).execute(status -> {
             MatchEntity match = matchRepository.save(MatchEntity.builder()
                     .title("참여 테스트").sportType(SportType.FUTSAL).maxParticipant(maxParticipant)
-                    .service(entityManager.getReference(ServiceEntity.class, serviceId)).genderGroup(GenderGroup.MIXED)
+                    .service(entityManager.getReference(FacilityServiceSnapshotEntity.class, serviceId)).genderGroup(GenderGroup.MIXED)
                     .status(matchStatus).startAt(startAt).endAt(startAt.plusHours(2)).build());
             matchParticipantRepository.save(MatchParticipantEntity.builder()
-                    .match(match).user(users.get(1L)).role(MatchParticipantRole.OWNER).build());
+                    .match(match).userId(users.get(1L)).role(MatchParticipantRole.OWNER).build());
             return match.getId();
         });
     }

@@ -4,8 +4,6 @@ import com.example.sporty.features.exerciseMatching.domain.entity.*;
 import com.example.sporty.features.exerciseMatching.domain.enums.*;
 import com.example.sporty.features.exerciseMatching.repository.MatchParticipantRepository;
 import com.example.sporty.features.commons.util.SportType;
-import com.example.sporty.features.facilities.domain.entity.ServiceEntity;
-import com.example.sporty.features.users.domain.entity.UserEntity;
 import com.example.sporty.support.FacilityFixtures;
 import com.example.sporty.support.MatchUserFixtures;
 import jakarta.persistence.EntityManager;
@@ -15,12 +13,17 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import com.example.sporty.features.exerciseMatching.client.MemberLookup;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @DataJpaTest(properties = {
-    "spring.jpa.hibernate.ddl-auto=create-drop",
+    "spring.jpa.hibernate.ddl-auto=none",
     "spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.H2Dialect",
-    "spring.jpa.properties.hibernate.auto_quote_keyword=true"
+    "spring.jpa.properties.hibernate.auto_quote_keyword=true",
+    "spring.sql.init.mode=always",
+    "spring.sql.init.schema-locations=classpath:schema-h2.sql",
+    "test.context-id=my-matches"
 })
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.ANY)
 @Import(MatchService.class)
@@ -28,6 +31,7 @@ class MyMatchesTest {
     @Autowired EntityManager em;
     @Autowired MatchService service;
     @Autowired MatchParticipantRepository participants;
+    @MockitoBean MemberLookup memberLookup;
 
     @Test
     void returnsOnlyOwnMatchesWithRoleCountsAndOrder() {
@@ -43,7 +47,7 @@ class MyMatchesTest {
         participate(unrelated, users.get(2L), MatchParticipantRole.OWNER);
         em.flush(); em.clear();
 
-        var result = service.getMyMatches(users.get(1L).getId());
+        var result = service.getMyMatches(users.get(1L));
         assertThat(result).extracting(dto -> dto.getTitle()).containsExactly("joined", "created");
         assertThat(result).extracting(dto -> dto.getRole())
                 .containsExactly(MatchParticipantRole.PARTICIPANT, MatchParticipantRole.OWNER);
@@ -53,18 +57,18 @@ class MyMatchesTest {
             assertThat(dto.getFacilityName()).isNotBlank();
         });
 
-        participants.delete(participants.findByMatch_IdAndUserId(joined.getId(), users.get(1L).getId()).orElseThrow());
+        participants.delete(participants.findByMatch_IdAndUserId(joined.getId(), users.get(1L)).orElseThrow());
         em.flush(); em.clear();
-        assertThat(service.getMyMatches(users.get(1L).getId())).extracting(dto -> dto.getTitle()).containsExactly("created");
+        assertThat(service.getMyMatches(users.get(1L))).extracting(dto -> dto.getTitle()).containsExactly("created");
     }
 
     @Test
     void returnsEmptyListWhenNoParticipation() {
         var users = MatchUserFixtures.create(em, 1);
-        assertThat(service.getMyMatches(users.get(1L).getId())).isEmpty();
+        assertThat(service.getMyMatches(users.get(1L))).isEmpty();
     }
 
-    private MatchEntity match(ServiceEntity facility, String title, int days) {
+    private MatchEntity match(FacilityServiceSnapshotEntity facility, String title, int days) {
         var start = LocalDateTime.now().plusDays(days);
         var match = MatchEntity.builder().service(facility).title(title).startAt(start).endAt(start.plusHours(1))
                 .maxParticipant(10).sportType(SportType.SOCCER).genderGroup(GenderGroup.MIXED).build();
@@ -72,7 +76,7 @@ class MyMatchesTest {
         return match;
     }
 
-    private void participate(MatchEntity match, UserEntity user, MatchParticipantRole role) {
-        em.persist(MatchParticipantEntity.builder().match(match).user(user).role(role).build());
+    private void participate(MatchEntity match, Long userId, MatchParticipantRole role) {
+        em.persist(MatchParticipantEntity.builder().match(match).userId(userId).role(role).build());
     }
 }
