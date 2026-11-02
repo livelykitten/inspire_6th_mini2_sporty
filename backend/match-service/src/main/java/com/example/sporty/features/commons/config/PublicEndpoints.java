@@ -22,6 +22,8 @@ public final class PublicEndpoints {
     public static final RequestMatcher MATCHER = new OrRequestMatcher(
             PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, "/api/matches"),
             MATCH_DETAIL,
+            PathPatternRequestMatcher.withDefaults().matcher("/actuator/health"),
+            PathPatternRequestMatcher.withDefaults().matcher("/actuator/health/**"),
             PathPatternRequestMatcher.withDefaults().matcher("/error"),
             PathPatternRequestMatcher.withDefaults().matcher("/internal/**"));
 }

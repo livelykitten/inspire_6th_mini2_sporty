@@ -69,7 +69,7 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
 
     @Override
     public int getOrder() {
-        // 요청 로그(맨 앞) 바로 다음: 401 도 로그에 남는다
+        // 라우트 필터 중 맨 앞 (요청 로그는 WebFilter 라 이보다 바깥에서 401 까지 남긴다)
         return Ordered.HIGHEST_PRECEDENCE + 1;
     }
 }
