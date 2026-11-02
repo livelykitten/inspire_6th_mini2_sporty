@@ -1,6 +1,11 @@
 server:
   port: 8004
 
+# Local mock server. Set an empty URL to use service discovery instead.
+clients:
+  match-service:
+    url: ${MATCH_SERVICE_URL:http://localhost:18002}
+
 spring:
   application:
     name: ai-service
