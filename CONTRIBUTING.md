@@ -43,7 +43,7 @@ cd backend
 | match-db | 3307 | `match-db:3306` | `match_db` / `match_svc` |
 | facility-db | 3308 | `facility-db:3306` | `facility_db` / `facility_svc` |
 | redis | 6379 | `redis:6379` | user 전용 refresh token |
-| kafka | 9092 | `kafka:29092` | 토픽 4개 + `facility.service.changed.DLT` 자동 생성 |
+| kafka | 9092 | `kafka:29092` | 토픽 4개 + 각 `.DLT` 토픽 자동 생성 |
 
 ```bash
 docker compose up -d --wait              # 기동 (kafka-init 이 토픽을 만들고 종료한다)
