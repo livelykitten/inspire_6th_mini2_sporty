@@ -12,7 +12,7 @@ import com.example.sporty.features.ai.client.dto.MatchSearchRequestDto;
 import com.example.sporty.features.ai.client.dto.MyMatchResponseDto;
 
 // match-service로 api 요청
-@FeignClient(name = "match-service", url = "${clients.match-service.url:}")
+@FeignClient(name = "match-service")
 public interface MatchClient {
 
     @GetMapping("/api/matches")

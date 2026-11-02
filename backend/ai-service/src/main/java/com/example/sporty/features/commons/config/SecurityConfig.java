@@ -16,14 +16,10 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
-import com.example.sporty.features.commons.filter.JwtAuthenticationFilter;
-
-import lombok.RequiredArgsConstructor;
+import com.example.sporty.features.commons.filter.UserIdHeaderAuthenticationFilter;
 
 @Configuration 
-@RequiredArgsConstructor 
 public class SecurityConfig {
-    private final JwtAuthenticationFilter jwtAuthenticationFilter;
 
     @Bean 
     public PasswordEncoder passwordEncoder() {
@@ -76,7 +72,7 @@ public class SecurityConfig {
                 session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
             );
         
-        http.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+        http.addFilterBefore(new UserIdHeaderAuthenticationFilter(), UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }

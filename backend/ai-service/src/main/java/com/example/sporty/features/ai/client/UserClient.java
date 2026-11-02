@@ -6,7 +6,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
 
 import com.example.sporty.features.ai.client.dto.UserInfoResponseDto;
 
-@FeignClient(name = "user-service", url = "${clients.user-service.url:}")
+@FeignClient(name = "user-service")
 public interface UserClient {
 
     @GetMapping("/api/users/me")

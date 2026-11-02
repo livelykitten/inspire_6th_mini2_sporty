@@ -16,7 +16,7 @@ import com.example.sporty.features.ai.util.SupportedSports;
 import com.example.sporty.features.commons.exception.ai.AiDraftException;
 import com.example.sporty.features.commons.exception.ai.AiSearchException;
 import com.example.sporty.features.commons.util.SportType;
-import com.example.sporty.features.exerciseMatching.service.MatchService;
+import com.example.sporty.features.ai.client.MatchClient;
 
 /*
 - AI가 enum에 없는 종목(예: SQUASH)을 도구에 넘긴 경우의 처리 테스트
@@ -38,13 +38,13 @@ class AiUnsupportedConditionTest {
     @Test
     @DisplayName("[AI-02] 지원하지 않는 종목으로 검색하면 지원 종목 안내와 함께 AiSearchException이 발생하고 매치를 조회하지 않는다")
     void searchWithUnsupportedSport() {
-        MatchService matchService = mock(MatchService.class);
-        MatchAiAgent agent = new MatchAiAgent(chatClientFailingOnSquash(), matchService);
+        MatchClient matchClient = mock(MatchClient.class);
+        MatchAiAgent agent = new MatchAiAgent(chatClientFailingOnSquash(), matchClient);
 
         assertThatThrownBy(() -> agent.search(PROMPT))
                 .isInstanceOf(AiSearchException.class)
                 .hasMessage(SupportedSports.unsupportedMessage());
-        verifyNoInteractions(matchService);
+        verifyNoInteractions(matchClient);
     }
 
     @Test

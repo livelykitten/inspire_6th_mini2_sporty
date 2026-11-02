@@ -1,24 +1,32 @@
 server:
   port: 8004
 
-# Local mock server. Set an empty URL to use service discovery instead.
-clients:
-  match-service:
-    url: ${MATCH_SERVICE_URL:http://localhost:18002}
-  user-service:
-    url: ${USER_SERVICE_URL:http://localhost:18001}
-
 spring:
   application:
     name: ai-service
+  cloud:
+    openfeign:
+      client:
+        config:
+          default:
+            connectTimeout: 1000
+            readTimeout: 2000
   config:
     import:
       - "optional:file:./.env[.properties]"
       - "optional:file:../.env[.properties]"
       - "optional:configserver:"
   ai:
+    retry:
+      # One attempt, with no automatic retries extending the OpenAI timeout.
+      max-attempts: 1
     openai:
       api-key: ${OPEN_AI_KEY:}
+
+# Applied to synchronous OpenAI HTTP calls by OpenAiHttpClientConfig.
+ai:
+  openai:
+    timeout: 10s
 
 eureka:
   client:

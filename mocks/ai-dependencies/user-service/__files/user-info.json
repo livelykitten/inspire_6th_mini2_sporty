@@ -1,0 +1,11 @@
+{
+  "email": "user7@example.com",
+  "gender": "MALE",
+  "nickname": "운동좋아",
+  "district": "GANGNAM",
+  "imageUrl": null,
+  "preferenceSports": [
+    "FUTSAL",
+    "BASKETBALL"
+  ]
+}

@@ -59,7 +59,7 @@ class MatchAiAgentTest {
                 .defaultTools(new MatchAiTool())
                 .build();
 
-        // 조건 추출만 검증하므로 MatchService는 사용하지 않는다.
+        // 조건 추출만 검증하므로 MatchClient는 사용하지 않는다.
         matchAIAgent = new MatchAiAgent(chatClient, null);
     }
 
