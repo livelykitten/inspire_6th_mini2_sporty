@@ -33,6 +33,28 @@ cd backend
 - 서비스 간 공통 모듈은 두지 않는다. 응답 DTO 는 호출하는 서비스에 복사한다.
 - 비밀값(`.env`)은 커밋하지 않는다.
 
+## 로컬 인프라 (W-06)
+
+`compose.yaml` 이 서비스당 MariaDB 1대, Redis, Kafka(KRaft 단일 노드)를 띄운다. 값은 기본값만으로 동작하고, 바꾸려면 `.env.example` 을 `.env` 로 복사한다.
+
+| 컨테이너 | 호스트 포트 | 컨테이너 안 주소 | DB / 계정 |
+|---|---|---|---|
+| user-db | 3306 | `user-db:3306` | `user_db` / `user_svc` |
+| match-db | 3307 | `match-db:3306` | `match_db` / `match_svc` |
+| facility-db | 3308 | `facility-db:3306` | `facility_db` / `facility_svc` |
+| redis | 6379 | `redis:6379` | user 전용 refresh token |
+| kafka | 9092 | `kafka:29092` | 토픽 4개 + `facility.service.changed.DLT` 자동 생성 |
+
+```bash
+docker compose up -d --wait              # 기동 (kafka-init 이 토픽을 만들고 종료한다)
+docker compose ps
+docker compose exec match-db mariadb -umatch_svc -pmatch_svc match_db   # DB 접속
+docker compose down                      # 중지 (데이터 유지)
+docker compose down -v                   # 중지 + 데이터 초기화
+```
+
+서비스 계정은 자기 DB 에만 권한이 있고 DB 가 서로 다른 인스턴스라, 다른 서비스 DB 에는 접속 자체가 되지 않는다 (MSA-08 증빙).
+
 ## 서비스 코드 배치 (구조만 나눈 상태)
 
 1차 `backend/sporty` 코드는 패키지 경계대로 서비스 디렉터리에 **복사**되어 있다(로직 수정 없음). 서비스 경계를 넘는 `import` 가 남아 있어 user · match · ai 는 아직 컴파일되지 않는다. 남은 목록은 [docs/msa-split-todo.md](docs/msa-split-todo.md) 에 있다.
