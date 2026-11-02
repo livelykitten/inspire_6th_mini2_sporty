@@ -33,6 +33,28 @@ cd backend
 - 서비스 간 공통 모듈은 두지 않는다. 응답 DTO 는 호출하는 서비스에 복사한다.
 - 비밀값(`.env`)은 커밋하지 않는다.
 
+## 서비스 이미지 빌드 (W-23)
+
+서비스 7개가 `backend/Dockerfile` 하나를 공용으로 쓴다. 빌드 컨텍스트는 `backend/` 이고 서비스는 build arg 로 고른다 (멀티스테이지: JDK 17 로 `bootJar` → JRE 17 비루트 실행).
+
+```bash
+docker build -f backend/Dockerfile --build-arg SERVICE=gateway-service --build-arg PORT=8000   -t sporty/gateway-service:local backend
+```
+
+| SERVICE | PORT |
+|---|---|
+| gateway-service | 8000 |
+| discovery-service | 8761 |
+| config-service | 8888 |
+| user-service | 8001 |
+| match-service | 8002 |
+| facility-service | 8003 |
+| ai-service | 8004 |
+
+- 지금은 경계 import 가 남은 user · match · ai 는 `bootJar` 가 컴파일 단계에서 실패해 이미지가 만들어지지 않는다. 서비스 이동(W-07, W-08, W-10)이 끝나면 같은 명령으로 빌드된다.
+- 이미지 안에는 `.env` 를 넣지 않는다 (`backend/.dockerignore`). 설정은 환경변수로 넘긴다.
+- JVM 메모리는 `JAVA_TOOL_OPTIONS` 의 `MaxRAMPercentage=75` 로 컨테이너 한도에 맞춘다. 바꾸려면 `-e JAVA_TOOL_OPTIONS=...` 로 덮어쓴다.
+
 ## 서비스 코드 배치 (구조만 나눈 상태)
 
 1차 `backend/sporty` 코드는 패키지 경계대로 서비스 디렉터리에 **복사**되어 있다(로직 수정 없음). 서비스 경계를 넘는 `import` 가 남아 있어 user · match · ai 는 아직 컴파일되지 않는다. 남은 목록은 [docs/msa-split-todo.md](docs/msa-split-todo.md) 에 있다.
