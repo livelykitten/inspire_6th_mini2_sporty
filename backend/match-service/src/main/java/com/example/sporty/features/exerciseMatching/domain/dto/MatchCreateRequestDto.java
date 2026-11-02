@@ -4,9 +4,9 @@ import java.time.LocalDateTime;
 
 import com.example.sporty.features.commons.util.SportType;
 import com.example.sporty.features.exerciseMatching.domain.entity.MatchEntity;
+import com.example.sporty.features.exerciseMatching.domain.entity.FacilityServiceSnapshotEntity;
 import com.example.sporty.features.exerciseMatching.domain.enums.GenderGroup;
 import com.example.sporty.features.exerciseMatching.domain.enums.SkillLevel;
-import com.example.sporty.features.facilities.domain.entity.ServiceEntity;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
@@ -65,7 +65,7 @@ public class MatchCreateRequestDto {
     }
 
     // MatchService validates this catalog ID before persistence.
-    public MatchEntity toEntity(ServiceEntity service) {
+    public MatchEntity toEntity(FacilityServiceSnapshotEntity service) {
         return MatchEntity.builder()
             .title(this.getTitle())
             .description(this.getDescription())

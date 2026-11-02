@@ -4,9 +4,6 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.example.sporty.features.commons.exception.users.UserNotFoundException;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,34 +20,27 @@ import com.example.sporty.features.exerciseMatching.domain.dto.MatchDetailRespon
 import com.example.sporty.features.exerciseMatching.domain.dto.MatchModifyRequestDto;
 import com.example.sporty.features.exerciseMatching.domain.dto.MatchParticipantResponseDto;
 import com.example.sporty.features.exerciseMatching.domain.dto.MatchParticipantSummaryDto;
-import com.example.sporty.features.commons.exception.matches.MatchUserNotFoundException;
-import com.example.sporty.features.commons.exception.matches.WithdrawnUserFoundException;
 import com.example.sporty.features.commons.exception.matches.ServiceNotFoundException;
-import com.example.sporty.features.facilities.domain.entity.ServiceEntity;
-import com.example.sporty.features.facilities.repository.ServiceRepository;
+import com.example.sporty.features.exerciseMatching.client.MemberLookup;
+import com.example.sporty.features.exerciseMatching.client.MemberProfile;
 import com.example.sporty.features.exerciseMatching.domain.dto.MatchCreateRequestDto;
 import com.example.sporty.features.exerciseMatching.domain.dto.MatchResponseDto;
 import com.example.sporty.features.exerciseMatching.domain.dto.MatchSearchRequestDto;
 import com.example.sporty.features.exerciseMatching.domain.dto.MyMatchResponseDto;
 import com.example.sporty.features.exerciseMatching.domain.entity.MatchEntity;
 import com.example.sporty.features.exerciseMatching.domain.entity.MatchParticipantEntity;
+import com.example.sporty.features.exerciseMatching.domain.entity.FacilityServiceSnapshotEntity;
 import com.example.sporty.features.exerciseMatching.domain.enums.MatchParticipantRole;
 import com.example.sporty.features.exerciseMatching.domain.enums.MatchStatus;
 import com.example.sporty.features.exerciseMatching.repository.MatchParticipantRepository;
 import com.example.sporty.features.exerciseMatching.repository.MatchRepository;
-import com.example.sporty.features.users.domain.entity.UserEntity;
-import com.example.sporty.features.users.domain.entity.UserStatus;
-import com.example.sporty.features.users.repository.UserRepository;
+import com.example.sporty.features.exerciseMatching.repository.FacilityServiceSnapshotRepository;
 
 import lombok.RequiredArgsConstructor;
 
 import java.util.Map;
 import java.util.Objects;
-import java.util.function.Function;
 import java.util.stream.Collectors;
-
-import com.example.sporty.features.profiles.domain.entity.ProfileEntity;
-import com.example.sporty.features.profiles.repository.ProfileRepository;
 
 @Service 
 @RequiredArgsConstructor 
@@ -58,19 +48,13 @@ import com.example.sporty.features.profiles.repository.ProfileRepository;
 public class MatchService {
     private final MatchRepository matchRepository;
     private final MatchParticipantRepository matchParticipantRepository;
-    private final UserRepository userRepository;
-    private final ProfileRepository profileRepository;
-    private final ServiceRepository serviceRepository;
+    private final MemberLookup memberLookup;
+    private final FacilityServiceSnapshotRepository facilityServiceSnapshotRepository;
 
     // [EM-08] 내 매치 목록 조회
     public List<MyMatchResponseDto> getMyMatches(Long userId) {
         // 1. 로그인 회원 확인
-        UserEntity user = userRepository.findById(userId)
-                .orElseThrow(UserNotFoundException::new);
-
-        if (user.getStatus() != UserStatus.ACTIVE) {
-            throw new WithdrawnUserFoundException();
-        }
+        memberLookup.validateActive(userId);
 
         // 2. 본인이 생성하거나 참여한 매치 조회
         List<MatchParticipantEntity> participants = matchParticipantRepository
@@ -149,8 +133,7 @@ public class MatchService {
         MatchEntity match = matchRepository.findByIdForUpdate(matchId)
                 .orElseThrow(MatchNotFoundException::new);
         
-        UserEntity user = userRepository.findById(userId)
-                .orElseThrow(MatchUserNotFoundException::new);
+        memberLookup.validateActive(userId);
 
         // OWNER도 이미 등록된 참가자이므로 역할과 관계없이 중복 참여를 막는다.
         if (matchParticipantRepository.existsByMatch_IdAndUserId(matchId, userId)) {
@@ -175,7 +158,7 @@ public class MatchService {
         MatchParticipantEntity participant = matchParticipantRepository.save(
                 MatchParticipantEntity.builder()
                         .match(match)
-                        .userId(user.getId())
+                        .userId(userId)
                         .role(MatchParticipantRole.PARTICIPANT)
                         .build());
 
@@ -208,25 +191,14 @@ public class MatchService {
     }
 
     @Transactional 
-    public Long createMatch(MatchCreateRequestDto req) {
+    public Long createMatch(MatchCreateRequestDto req, Long userId) {
 
         System.out.println("debug >> MatchService.createMatch(), req: " + req);
 
-        // 1. get user id from the authentication context
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        Long userId = Long.valueOf(auth.getName());
-
-
-        UserEntity userEntity = 
-            userRepository.findById(userId)
-            .orElseThrow(() -> new MatchUserNotFoundException());
-
-        if (userEntity.getStatus() != UserStatus.ACTIVE) {
-            throw new WithdrawnUserFoundException();
-        }
+        memberLookup.validateActive(userId);
 
         // Validate the catalog before creating either match or participant records.
-        ServiceEntity service = serviceRepository.findById(req.getServiceId())
+        FacilityServiceSnapshotEntity service = facilityServiceSnapshotRepository.findById(req.getServiceId())
             .orElseThrow(ServiceNotFoundException::new);
 
         // 3. create MatchEntity and save
@@ -239,7 +211,7 @@ public class MatchService {
 
         MatchParticipantEntity matchParticipantEntity
             = MatchParticipantEntity.builder()
-            .userId(userEntity.getId())
+            .userId(userId)
             .match(savedMatchEntity)
             .role(MatchParticipantRole.OWNER)
             .build();
@@ -347,10 +319,9 @@ public class MatchService {
                 .toList();
         
         
-        Map<Long, ProfileEntity> profilesByUserId = participantUserIds.isEmpty()
+        Map<Long, MemberProfile> profilesByUserId = participantUserIds.isEmpty()
                 ? Map.of()
-                : profileRepository.findAllByUser_IdIn(participantUserIds).stream()
-                        .collect(Collectors.toMap(profile -> profile.getUser().getId(), Function.identity()));
+                : memberLookup.getProfiles(participantUserIds);
 
         List<MatchParticipantSummaryDto> participantSummaries = new ArrayList<>();
         boolean isOwner = false;
@@ -358,14 +329,14 @@ public class MatchService {
 
 
         for (MatchParticipantEntity participant : participants) {
-            ProfileEntity profile = participant.getUserId() == null
+            MemberProfile profile = participant.getUserId() == null
                     ? null : profilesByUserId.get(participant.getUserId());
 
             // 프로필이 누락되어도 참가 정보와 인원은 유지한다.
             participantSummaries.add(MatchParticipantSummaryDto.builder()
-                    .profileId(profile == null ? null : profile.getId())
-                    .nickname(profile == null ? null : profile.getNickname())
-                    .imageUrl(profile == null ? null : profile.getImageUrl())
+                    .profileId(profile == null ? null : profile.profileId())
+                    .nickname(profile == null ? null : profile.nickname())
+                    .imageUrl(profile == null ? null : profile.imageUrl())
                     .role(participant.getRole())
                     .build());
 
@@ -389,13 +360,13 @@ public class MatchService {
                 .skillLevel(match.getSkillLevel())
                 .sportType(match.getSportType())
                 .genderGroup(match.getGenderGroup())
-                .serviceId(match.getService().getId())
+                .serviceId(match.getService().getServiceId())
                 .participants(participantSummaries)
                 .isOwner(isOwner)
                 .isParticipant(isParticipant)
-                .region(match.getService().getLocation().getRegion())
+                .region(match.getService().getRegion())
                 .serviceName(match.getService().getName())
-                .locationName(match.getService().getLocation().getName())
+                .locationName(match.getService().getLocationName())
                 .build();
     }
 }

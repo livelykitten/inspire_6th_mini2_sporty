@@ -29,8 +29,7 @@ public interface MatchRepository extends JpaRepository<MatchEntity, Long> {
             SELECT m
             FROM MatchEntity m
             JOIN FETCH m.service s
-            JOIN FETCH s.location l
-            WHERE (:serviceId IS NULL OR m.service.id = :serviceId)
+            WHERE (:serviceId IS NULL OR m.service.serviceId = :serviceId)
             AND (:titleKeyword IS NULL OR LOWER(m.title) LIKE LOWER(CONCAT('%', :titleKeyword, '%')) ESCAPE '!')
             AND (:descriptionKeyword IS NULL OR LOWER(m.description) LIKE LOWER(CONCAT('%', :descriptionKeyword, '%')) ESCAPE '!')
             AND (:startAt IS NULL OR m.startAt >= :startAt)
@@ -40,7 +39,7 @@ public interface MatchRepository extends JpaRepository<MatchEntity, Long> {
             AND (:sportType IS NULL OR m.sportType = :sportType)
             AND (:genderGroup IS NULL OR m.genderGroup = :genderGroup)
             AND (:status IS NULL OR m.status = :status)
-            AND (:region IS NULL OR LOWER(l.region) LIKE LOWER(CONCAT('%', :region, '%')) ESCAPE '!')
+            AND (:region IS NULL OR LOWER(s.region) LIKE LOWER(CONCAT('%', :region, '%')) ESCAPE '!')
             AND (:isFree IS NULL OR s.isFree = :isFree)
         """)
     List<MatchEntity> searchMatches(
