@@ -8,15 +8,10 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
-import com.example.sporty.features.commons.filter.XUserIdAuthenticationFilter;
-
-import lombok.RequiredArgsConstructor;
+import com.example.sporty.features.commons.filter.UserIdHeaderAuthenticationFilter;
 
 @Configuration 
-@RequiredArgsConstructor 
 public class SecurityConfig {
-    private final XUserIdAuthenticationFilter xUserIdAuthenticationFilter;
-
     @Bean   
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 
@@ -42,7 +37,10 @@ public class SecurityConfig {
                 session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
             );
         
-        http.addFilterBefore(xUserIdAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+        http.addFilterBefore(
+            new UserIdHeaderAuthenticationFilter(),
+            UsernamePasswordAuthenticationFilter.class
+        );
 
         return http.build();
     }
