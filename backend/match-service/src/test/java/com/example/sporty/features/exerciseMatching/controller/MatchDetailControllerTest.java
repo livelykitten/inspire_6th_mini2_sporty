@@ -10,11 +10,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import java.nio.charset.StandardCharsets;
-import java.time.Instant;
 import java.time.LocalDateTime;
-import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import org.junit.jupiter.api.DisplayName;
@@ -27,38 +25,27 @@ import org.springframework.http.MediaType;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
-import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.example.sporty.features.commons.config.SecurityConfig;
-import com.example.sporty.features.commons.filter.JwtAuthenticationFilter;
-import com.example.sporty.features.commons.token.JwtProvider;
 import com.example.sporty.features.commons.util.SportType;
+import com.example.sporty.features.exerciseMatching.client.MemberLookup;
+import com.example.sporty.features.exerciseMatching.client.MemberProfile;
 import com.example.sporty.features.exerciseMatching.domain.entity.MatchEntity;
 import com.example.sporty.features.exerciseMatching.domain.entity.MatchParticipantEntity;
 import com.example.sporty.features.exerciseMatching.domain.enums.MatchParticipantRole;
 import com.example.sporty.features.exerciseMatching.domain.enums.GenderGroup;
 import com.example.sporty.features.exerciseMatching.repository.MatchParticipantRepository;
 import com.example.sporty.features.exerciseMatching.repository.MatchRepository;
+import com.example.sporty.features.exerciseMatching.repository.FacilityServiceSnapshotRepository;
 import com.example.sporty.features.exerciseMatching.service.MatchService;
-import com.example.sporty.features.profiles.domain.entity.ProfileEntity;
-import com.example.sporty.features.profiles.repository.ProfileRepository;
-import com.example.sporty.features.users.domain.entity.UserEntity;
-import com.example.sporty.features.users.repository.UserRepository;
-import com.example.sporty.features.facilities.repository.ServiceRepository;
 import com.example.sporty.support.FacilityFixtures;
 
-import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.security.Keys;
-
-// 실제 JWT 필터 -> Controller -> Service -> JSON 응답을 검증하며 DB 조회만 대체한다.
+// 실제 X-User-Id 필터 -> Controller -> Service -> JSON 응답을 검증하며 DB 조회만 대체한다.
 @WebMvcTest(MatchController.class)
-@Import({MatchService.class, SecurityConfig.class, JwtAuthenticationFilter.class})
-@TestPropertySource(properties = "jwt.secret=test-only-signing-secret-with-at-least-32-bytes")
+@Import({MatchService.class, SecurityConfig.class})
 class MatchDetailControllerTest {
-
-    private static final String SECRET = "test-only-signing-secret-with-at-least-32-bytes";
 
     @Autowired
     private MockMvc mvc;
@@ -70,13 +57,10 @@ class MatchDetailControllerTest {
     private MatchParticipantRepository matchParticipantRepository;
 
     @MockitoBean
-    private ProfileRepository profileRepository;
+    private MemberLookup memberLookup;
 
     @MockitoBean
-    private UserRepository userRepository;
-
-    @MockitoBean
-    private ServiceRepository serviceRepository;
+    private FacilityServiceSnapshotRepository facilityServiceSnapshotRepository;
 
     @Test
     @DisplayName("[TC-EM03-01] 비로그인 상세 조회 200, 기본 정보와 참가자 프로필 반환")
@@ -115,12 +99,11 @@ class MatchDetailControllerTest {
 
     @ParameterizedTest
     @CsvSource({"1,true,true", "2,false,true", "3,false,false"})
-    @DisplayName("유효한 JWT의 사용자 ID와 매치 참가 역할로 내 상태를 반환한다")
+    @DisplayName("유효한 X-User-Id와 매치 참가 역할로 내 상태를 반환한다")
     void authenticatedUserGetsOwnState(String userId, boolean owner, boolean participant) throws Exception {
         givenMatch();
 
-        mvc.perform(get("/api/matches/101").header("Authorization", "Bearer " +
-                        token(userId, SECRET, Instant.now().plusSeconds(300))))
+        mvc.perform(get("/api/matches/101").header("X-User-Id", userId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.isOwner").value(owner))
                 .andExpect(jsonPath("$.isParticipant").value(participant));
@@ -133,16 +116,13 @@ class MatchDetailControllerTest {
     }
 
     @Test
-    @DisplayName("잘못된 토큰과 만료 토큰으로도 공개 상세는 조회하되 사용자로 인증하지 않는다")
-    void invalidTokensAreTreatedAsAnonymousForDetail() throws Exception {
+    @DisplayName("잘못된 X-User-Id로도 공개 상세는 조회하되 사용자로 인증하지 않는다")
+    void invalidUserIdHeadersAreTreatedAsAnonymousForDetail() throws Exception {
         givenMatch();
-        List<String> headers = List.of("Bearer broken", "Bearer ", "Basic ignored",
-                "Bearer " + token("1", SECRET, Instant.now().minusSeconds(60)),
-                "Bearer " + token("1", "different-test-secret-with-at-least-32-bytes", Instant.now().plusSeconds(300)),
-                "Bearer " + token("invalid-user-id", SECRET, Instant.now().plusSeconds(300)));
+        List<String> headers = List.of("broken", "0", "-1", "9223372036854775808");
 
         for (String header : headers) {
-            mvc.perform(get("/api/matches/101").header("Authorization", header))
+            mvc.perform(get("/api/matches/101").header("X-User-Id", header))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.isOwner").value(false))
                     .andExpect(jsonPath("$.isParticipant").value(false));
@@ -150,19 +130,16 @@ class MatchDetailControllerTest {
     }
 
     @Test
-    @DisplayName("로그인에서 발급하는 Access Token은 사용자를 식별하고 Refresh Token은 비로그인으로 처리한다")
-    void issuedTokensFollowDetailAuthenticationPolicy() throws Exception {
+    @DisplayName("양수 Long 헤더만 사용자를 식별한다")
+    void validAndInvalidHeadersFollowDetailAuthenticationPolicy() throws Exception {
         givenMatch();
-        JwtProvider jwtProvider = new JwtProvider(SECRET);
 
-        mvc.perform(get("/api/matches/101").header("Authorization", "Bearer " +
-                        jwtProvider.createAccessToken(1L)))
+        mvc.perform(get("/api/matches/101").header("X-User-Id", "1"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.isOwner").value(true))
                 .andExpect(jsonPath("$.isParticipant").value(true));
 
-        mvc.perform(get("/api/matches/101").header("Authorization", "Bearer " +
-                        jwtProvider.createRefreshToken(1L)))
+        mvc.perform(get("/api/matches/101").header("X-User-Id", "invalid"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.isOwner").value(false))
                 .andExpect(jsonPath("$.isParticipant").value(false));
@@ -177,7 +154,7 @@ class MatchDetailControllerTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("MATCH_NOT_FOUND"))
                 .andExpect(jsonPath("$.message").value("매치를 찾을 수 없습니다."));
-        verifyNoInteractions(matchParticipantRepository, profileRepository);
+        verifyNoInteractions(matchParticipantRepository, memberLookup);
     }
 
     @ParameterizedTest
@@ -185,7 +162,7 @@ class MatchDetailControllerTest {
     @DisplayName("Long으로 해석할 수 없는 matchId는 400을 반환한다")
     void malformedMatchIdReturnsBadRequest(String matchId) throws Exception {
         mvc.perform(get("/api/matches/" + matchId)).andExpect(status().isBadRequest());
-        verifyNoInteractions(matchRepository, matchParticipantRepository, profileRepository);
+        verifyNoInteractions(matchRepository, matchParticipantRepository, memberLookup);
     }
 
     @Test
@@ -198,15 +175,13 @@ class MatchDetailControllerTest {
                 .id(matchId).service(FacilityFixtures.service(serviceId, true)).build()));
         when(matchParticipantRepository.findAllByMatch_IdOrderByIdAsc(matchId)).thenReturn(List.of(
                 MatchParticipantEntity.builder().id(2147483651L)
-                        .user(UserEntity.builder().id(userId).build())
+                        .userId(userId)
                         .role(MatchParticipantRole.OWNER).build()));
-        when(profileRepository.findAllByUser_IdIn(List.of(userId))).thenReturn(List.of(
-                ProfileEntity.builder().id(401L).nickname("생성자")
-                        .user(UserEntity.builder().id(userId).build()).build()));
+        when(memberLookup.getProfiles(List.of(userId))).thenReturn(Map.of(
+                userId, new MemberProfile(401L, "생성자", null)));
 
         mvc.perform(get("/api/matches/{matchId}", matchId)
-                        .header("Authorization", "Bearer " +
-                                token(userId.toString(), SECRET, Instant.now().plusSeconds(300))))
+                        .header("X-User-Id", userId.toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.matchId").value(matchId))
                 .andExpect(jsonPath("$.serviceId").value(serviceId))
@@ -223,42 +198,40 @@ class MatchDetailControllerTest {
                 .endAt(LocalDateTime.of(2026, 9, 26, 21, 0))
                 .maxParticipant(10).sportType(SportType.FUTSAL).genderGroup(GenderGroup.MIXED).service(FacilityFixtures.service(7L, true)).build()));
         when(matchParticipantRepository.findAllByMatch_IdOrderByIdAsc(101L)).thenReturn(List.of(
-                MatchParticipantEntity.builder().id(11L).user(UserEntity.builder().id(1L).build())
+                MatchParticipantEntity.builder().id(11L).userId(1L)
                         .role(MatchParticipantRole.OWNER).build(),
-                MatchParticipantEntity.builder().id(12L).user(UserEntity.builder().id(2L).build())
+                MatchParticipantEntity.builder().id(12L).userId(2L)
                         .role(MatchParticipantRole.PARTICIPANT).build()));
-        when(profileRepository.findAllByUser_IdIn(List.of(1L, 2L))).thenReturn(List.of(
-                ProfileEntity.builder().id(401L).nickname("생성자").imageUrl("https://example.com/owner.png")
-                        .user(UserEntity.builder().id(1L).email("owner@example.com").password("test-hash").build()).build(),
-                ProfileEntity.builder().id(402L).nickname("참가자")
-                        .user(UserEntity.builder().id(2L).build()).build()));
+        when(memberLookup.getProfiles(List.of(1L, 2L))).thenReturn(Map.of(
+                1L, new MemberProfile(401L, "생성자", "https://example.com/owner.png"),
+                2L, new MemberProfile(402L, "참가자", null)));
     }
 
     @ParameterizedTest
     @EnumSource(GenderGroup.class)
     void creationPassesGenderGroupToPersistence(GenderGroup genderGroup) throws Exception {
-        when(userRepository.findById(1L)).thenReturn(Optional.of(UserEntity.builder().id(1L).build()));
-        when(serviceRepository.findById(7L)).thenReturn(Optional.of(FacilityFixtures.service(7L, true)));
+        when(facilityServiceSnapshotRepository.findById(7L)).thenReturn(Optional.of(FacilityFixtures.service(7L, true)));
         when(matchRepository.save(any(MatchEntity.class))).thenAnswer(invocation ->
                 MatchEntity.builder().id(101L).genderGroup(invocation.<MatchEntity>getArgument(0).getGenderGroup()).build());
 
         mvc.perform(post("/api/matches")
-                .header("Authorization", "Bearer " + new JwtProvider(SECRET).createAccessToken(1L))
+                .header("X-User-Id", "1")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(createRequest(", \"genderGroup\": \"" + genderGroup.name() + "\"")))
                 .andExpect(status().isCreated());
         verify(matchRepository).save(argThat(match -> match.getGenderGroup() == genderGroup
-                && match.getService().getId().equals(7L)));
+                && match.getService().getServiceId().equals(7L)));
     }
 
     @ParameterizedTest
     @ValueSource(strings = {"", ", \"genderGroup\": null", ", \"genderGroup\": \"UNKNOWN\""})
     void creationRejectsMissingNullOrInvalidGenderGroup(String genderField) throws Exception {
         mvc.perform(post("/api/matches")
-                .header("Authorization", "Bearer " + new JwtProvider(SECRET).createAccessToken(1L))
+                .header("X-User-Id", "1")
                 .contentType(MediaType.APPLICATION_JSON).content(createRequest(genderField)))
                 .andExpect(status().isBadRequest());
-        verifyNoInteractions(matchRepository, matchParticipantRepository, userRepository, serviceRepository);
+        verifyNoInteractions(matchRepository, matchParticipantRepository,
+                memberLookup, facilityServiceSnapshotRepository);
     }
 
     @ParameterizedTest
@@ -316,11 +289,4 @@ class MatchDetailControllerTest {
                 """.formatted(genderField);
     }
 
-    private String token(String userId, String secret, Instant expiration) {
-        // 전역 권한 문자열이 OWNER여도 해당 매치에 참여하지 않았다면 생성자가 아니다.
-        return Jwts.builder().setSubject(userId).claim("role", "OWNER")
-                .claim("tokenType", "ACCESS")
-                .setExpiration(Date.from(expiration))
-                .signWith(Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8))).compact();
-    }
 }
