@@ -17,24 +17,16 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.context.annotation.Import;
-import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-import com.example.sporty.features.commons.config.SecurityConfig;
 import com.example.sporty.features.commons.exception.matches.ServiceNotFoundException;
-import com.example.sporty.features.commons.filter.JwtAuthenticationFilter;
 import com.example.sporty.features.facilities.domain.dto.ServiceDetailResponseDto;
 import com.example.sporty.features.facilities.domain.dto.ServiceRequestDto;
 import com.example.sporty.features.facilities.domain.dto.ServiceResponseDto;
 import com.example.sporty.features.facilities.service.FacilityQueryService;
 
 @WebMvcTest(FacilityServiceController.class)
-@Import({SecurityConfig.class, JwtAuthenticationFilter.class})
-@TestPropertySource(
-        properties = "jwt.secret=test-only-signing-secret-with-at-least-32-bytes"
-)
 class FacilityServiceControllerTest {
 
     @Autowired
@@ -101,6 +93,21 @@ class FacilityServiceControllerTest {
                         .value("검색 조건 형식이 올바르지 않습니다. 시간은 HH:mm 형식으로 입력해주세요."));
 
         verifyNoInteractions(facilityQueryService);
+    }
+
+    @Test
+    @DisplayName("FC-01: 시작시간이 종료시간보다 늦으면 400과 안내 메시지를 반환한다")
+    void getServicesWithInvalidTimeRange() throws Exception {
+        when(facilityQueryService.getFacilities(any(ServiceRequestDto.class)))
+                .thenThrow(new IllegalArgumentException("시작시간은 종료시간보다 늦을 수 없습니다."));
+
+        mvc.perform(get("/api/services")
+                        .param("startTime", "20:00")
+                        .param("endTime", "10:00"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_SEARCH_CONDITION"))
+                .andExpect(jsonPath("$.message")
+                        .value("시작시간은 종료시간보다 늦을 수 없습니다."));
     }
 
     @Test

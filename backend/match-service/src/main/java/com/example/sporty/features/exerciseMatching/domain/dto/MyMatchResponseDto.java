@@ -38,7 +38,7 @@ public class MyMatchResponseDto {
                 .maxParticipant(match.getMaxParticipant())
                 .status(match.getStatus())
                 .sportType(match.getSportType())
-                .region(match.getService().getLocation().getRegion())
+                .region(match.getService().getRegion())
                 .facilityName(match.getService().getName())
                 .isFree(match.getService().getIsFree())
                 .role(participant.getRole())

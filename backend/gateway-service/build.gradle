@@ -3,4 +3,10 @@ dependencies {
 	implementation 'org.springframework.cloud:spring-cloud-starter-netflix-eureka-client'
 	implementation 'org.springframework.cloud:spring-cloud-starter-config'
 	implementation 'org.springframework.cloud:spring-cloud-starter-loadbalancer'
+	// JWT 검증: 1차 · user-service 와 같은 jjwt 0.11.5 (키 만드는 방식이 같아야 서명이 맞음)
+	implementation 'io.jsonwebtoken:jjwt-api:0.11.5'
+	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.11.5'
+	runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.11.5'
+
+	testImplementation 'io.projectreactor:reactor-test'
 }

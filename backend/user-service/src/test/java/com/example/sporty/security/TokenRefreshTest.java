@@ -4,7 +4,6 @@ import com.example.sporty.features.auth.controller.AuthController;
 import com.example.sporty.features.auth.service.AuthService;
 import com.example.sporty.features.auth.service.RefreshTokenService;
 import com.example.sporty.features.commons.config.SecurityConfig;
-import com.example.sporty.features.commons.filter.JwtAuthenticationFilter;
 import com.example.sporty.features.commons.token.JwtProvider;
 import com.example.sporty.features.users.repository.UserRepository;
 import com.example.sporty.features.users.domain.entity.*;
@@ -27,7 +26,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(AuthController.class)
-@Import({AuthService.class, JwtProvider.class, SecurityConfig.class, JwtAuthenticationFilter.class})
+@Import({
+        AuthService.class,
+        JwtProvider.class,
+        SecurityConfig.class
+})
 @TestPropertySource(properties = "jwt.secret=test-only-signing-secret-with-at-least-32-bytes")
 class TokenRefreshTest {
     static final String SECRET = "test-only-signing-secret-with-at-least-32-bytes";
