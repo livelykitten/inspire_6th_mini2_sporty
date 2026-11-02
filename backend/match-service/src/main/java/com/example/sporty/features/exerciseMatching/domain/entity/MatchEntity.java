@@ -27,7 +27,6 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ForeignKey;
-import com.example.sporty.features.facilities.domain.entity.ServiceEntity;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -106,7 +105,7 @@ public class MatchEntity {
     @JoinColumn(name = "service_id", nullable = false,
             foreignKey = @ForeignKey(name = "fk_match_service"))
     @ToString.Exclude
-    private ServiceEntity service;
+    private FacilityServiceSnapshotEntity service;
 
     // Match의 Status를 CLOSED 로 변경하는 메서드
     public void closeRecruitment() {
