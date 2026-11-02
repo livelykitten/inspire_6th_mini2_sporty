@@ -4,6 +4,10 @@ server:
 spring:
   application:
     name: facility-service
+  task:
+    scheduling:
+      pool:
+        size: 2
   config:
     import:
       - "optional:file:./.env[.properties]"
@@ -31,3 +35,14 @@ management:
     web:
       exposure:
         include: health,info
+
+facility:
+  openapi:
+    service-key: ${PUBLIC_DATA_API_KEY:}
+    base-url: ${PUBLIC_DATA_API_URL:}
+    service-name: ListPublicReservationSport
+    data-type: json
+  sync:
+    cron: "0 0 3 * * *"
+    zone: "Asia/Seoul"
+    on-startup: ${FACILITY_SYNC_ON_STARTUP:true}
