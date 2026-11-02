@@ -74,7 +74,7 @@ public class MatchService {
 
         // 2. 본인이 생성하거나 참여한 매치 조회
         List<MatchParticipantEntity> participants = matchParticipantRepository
-                .findAllByUser_IdOrderByMatch_StartAtDescMatch_IdDesc(userId);
+                .findAllByUserIdOrderByMatch_StartAtDescMatch_IdDesc(userId);
         if (participants.isEmpty()) {
             return List.of();
         }
@@ -126,7 +126,7 @@ public class MatchService {
     @Transactional
     public void removeMatchesForWithdrawal(Long userId) {
         List<Long> matchIds = matchParticipantRepository
-                .findAllByUser_IdOrderByMatch_StartAtDescMatch_IdDesc(userId).stream()
+                .findAllByUserIdOrderByMatch_StartAtDescMatch_IdDesc(userId).stream()
                 .map(participant -> participant.getMatch().getId())
                 .distinct().sorted().toList();
 
@@ -175,7 +175,7 @@ public class MatchService {
         MatchParticipantEntity participant = matchParticipantRepository.save(
                 MatchParticipantEntity.builder()
                         .match(match)
-                        .user(user)
+                        .userId(user.getId())
                         .role(MatchParticipantRole.PARTICIPANT)
                         .build());
 
@@ -186,7 +186,7 @@ public class MatchService {
         return MatchParticipantResponseDto.builder()
                 .matchParticipantId(participant.getId())
                 .matchId(matchId)
-                .userId(participant.getUser().getId())
+                .userId(participant.getUserId())
                 .role(participant.getRole())
                 .build();
     }
@@ -195,7 +195,7 @@ public class MatchService {
     // EM-05: 참가 기록과 매치를 한 트랜잭션에서 삭제한다.
     @Transactional
     public void deleteMatch(Long matchId, Long userId) {
-        MatchEntity match = matchRepository.findById(matchId)
+        MatchEntity match = matchRepository.findByIdForUpdate(matchId)
                 .orElseThrow(MatchNotFoundException::new);
 
         matchParticipantRepository.findByMatch_IdAndUserId(matchId, userId)
@@ -239,7 +239,7 @@ public class MatchService {
 
         MatchParticipantEntity matchParticipantEntity
             = MatchParticipantEntity.builder()
-            .user(userEntity) 
+            .userId(userEntity.getId())
             .match(savedMatchEntity)
             .role(MatchParticipantRole.OWNER)
             .build();
@@ -341,9 +341,7 @@ public class MatchService {
         
         
         List<Long> participantUserIds = participants.stream()
-                .map(MatchParticipantEntity::getUser)
-                .filter(Objects::nonNull)
-                .map(UserEntity::getId)
+                .map(MatchParticipantEntity::getUserId)
                 .filter(Objects::nonNull)
                 .distinct()
                 .toList();
@@ -360,8 +358,8 @@ public class MatchService {
 
 
         for (MatchParticipantEntity participant : participants) {
-            ProfileEntity profile = participant.getUser().getId() == null
-                    ? null : profilesByUserId.get(participant.getUser().getId());
+            ProfileEntity profile = participant.getUserId() == null
+                    ? null : profilesByUserId.get(participant.getUserId());
 
             // 프로필이 누락되어도 참가 정보와 인원은 유지한다.
             participantSummaries.add(MatchParticipantSummaryDto.builder()
@@ -371,7 +369,7 @@ public class MatchService {
                     .role(participant.getRole())
                     .build());
 
-            if (userId != null && userId.equals(participant.getUser().getId())) {
+            if (userId != null && userId.equals(participant.getUserId())) {
                 isParticipant = true;
                 if (participant.getRole() == MatchParticipantRole.OWNER) {
                     isOwner = true;

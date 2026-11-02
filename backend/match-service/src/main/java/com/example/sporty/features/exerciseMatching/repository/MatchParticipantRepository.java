@@ -12,7 +12,7 @@ public interface MatchParticipantRepository extends JpaRepository<MatchParticipa
 
     // [EM-08] 내 매치 목록: 생성/참여 모두 조회하며 최근 시작 일정부터 표시한다.
     @EntityGraph(attributePaths = {"match", "match.service", "match.service.location"})
-    List<MatchParticipantEntity> findAllByUser_IdOrderByMatch_StartAtDescMatch_IdDesc(Long userId);
+    List<MatchParticipantEntity> findAllByUserIdOrderByMatch_StartAtDescMatch_IdDesc(Long userId);
 
     List<MatchParticipantEntity> findAllByMatch_IdOrderByIdAsc(Long matchId);
 
