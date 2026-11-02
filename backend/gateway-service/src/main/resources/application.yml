@@ -13,11 +13,11 @@ spring:
     gateway:
       server:
         webflux:
-          # 1차 SecurityConfig 37-41행 값 그대로. 서비스 쪽 CORS 는 각 담당이 제거
+          # 1차 SecurityConfig 37-41행 값 그대로 (오리진만 배포용으로 바꿀 수 있게 환경변수). 서비스 쪽 CORS 는 각 담당이 제거
           globalcors:
             cors-configurations:
               '[/**]':
-                allowed-origins: http://localhost:3000
+                allowed-origins: ${CORS_ALLOWED_ORIGIN:http://localhost:3000}
                 allowed-methods: GET, POST, PUT, PATCH, DELETE, OPTIONS
                 allowed-headers: Authorization, Content-Type, Refresh-Token
                 exposed-headers: Authorization
