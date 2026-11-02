@@ -50,6 +50,7 @@ public class MatchController {
 
     @PostMapping
     public ResponseEntity<?> createMatch(
+        @AuthenticationPrincipal Long userId,
         @Valid @RequestBody MatchCreateRequestDto req,
         BindingResult bindingResult
     ) {
@@ -69,7 +70,7 @@ public class MatchController {
 
         // proceed if there are no errors
         
-        return ResponseEntity.status(HttpStatus.CREATED).body(matchService.createMatch(req));
+        return ResponseEntity.status(HttpStatus.CREATED).body(matchService.createMatch(req, userId));
     }
 
     @GetMapping
