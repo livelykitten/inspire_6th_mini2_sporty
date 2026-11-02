@@ -69,6 +69,7 @@ public class AiController {
     }
 
     // AI-03  로그인 회원의 자치구·선호 종목·성별로 추천 매치 최대 3개 (후보가 없으면 빈 배열)
+    // 로그인 아이디를 받아온다
     @GetMapping("/matches/recommendations")
     public ResponseEntity<List<MatchResponseDto>> recommendMatches(@AuthenticationPrincipal Long userId) {
         System.out.println("debug >>>> ai controller recommendMatches : " + userId);

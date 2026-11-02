@@ -5,6 +5,8 @@ server:
 clients:
   match-service:
     url: ${MATCH_SERVICE_URL:http://localhost:18002}
+  user-service:
+    url: ${USER_SERVICE_URL:http://localhost:18001}
 
 spring:
   application:
