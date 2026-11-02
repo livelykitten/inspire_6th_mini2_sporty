@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     # wip 서비스는 1차 코드의 서비스 경계 import 가 남아 있어 아직 컴파일되지 않는다 (docs/msa-split-todo.md).
     # 해당 서비스의 이동 PR(W-07 ~ W-10)이 머지되면 그 줄의 wip 를 지운다.
-    continue-on-error: ${{ matrix.wip }}
+    # 잡 단위 continue-on-error 는 워크플로만 통과시키고 PR 의 체크는 빨갛게 남기므로, 컴파일 스텝에서만 실패를 허용한다.
     strategy:
       fail-fast: false
       matrix:
@@ -45,7 +45,13 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: 컴파일
+        id: compile
+        continue-on-error: ${{ matrix.wip }}
         run: ./gradlew :${{ matrix.service }}:compileJava :${{ matrix.service }}:compileTestJava
+
+      - name: wip 서비스 컴파일 실패 알림
+        if: ${{ matrix.wip && steps.compile.outcome == 'failure' }}
+        run: echo "::warning title=wip::${{ matrix.service }} 는 아직 컴파일되지 않습니다 (이동 PR 머지 후 wip 를 지운다)"
 
   frontend:
     name: frontend
