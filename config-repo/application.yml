@@ -1,0 +1,7 @@
+# 모든 서비스가 Config 서버에서 공통으로 받는 설정.
+# 서비스별 설정은 {서비스}-{프로필}.yml (예: user-service-local.yml) 로 추가한다. (W-24)
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

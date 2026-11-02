@@ -1,0 +1,26 @@
+server:
+  port: 8004
+
+spring:
+  application:
+    name: ai-service
+  config:
+    import:
+      - "optional:file:./.env[.properties]"
+      - "optional:file:../.env[.properties]"
+      - "optional:configserver:"
+  ai:
+    openai:
+      api-key: ${OPEN_AI_KEY:}
+
+eureka:
+  client:
+    enabled: ${EUREKA_ENABLED:true}
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

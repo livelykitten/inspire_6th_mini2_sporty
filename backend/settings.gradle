@@ -1,0 +1,9 @@
+rootProject.name = 'sporty-msa'
+
+include 'gateway-service'
+include 'discovery-service'
+include 'config-service'
+include 'user-service'
+include 'match-service'
+include 'facility-service'
+include 'ai-service'
