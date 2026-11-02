@@ -12,7 +12,7 @@ import com.example.sporty.features.ai.domain.dto.AiSearchResponseDto;
 import com.example.sporty.features.ai.util.PromptDateTable;
 import com.example.sporty.features.ai.util.SupportedSports;
 import com.example.sporty.features.commons.exception.ai.AiSearchException;
-import com.example.sporty.features.exerciseMatching.domain.dto.MatchResponseDto;
+import com.example.sporty.features.ai.client.dto.MatchResponseDto;
 import com.example.sporty.features.exerciseMatching.service.MatchService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;

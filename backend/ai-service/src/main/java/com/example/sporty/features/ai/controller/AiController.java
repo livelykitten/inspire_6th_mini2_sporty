@@ -19,7 +19,7 @@ import com.example.sporty.features.ai.agent.MatchDraftAiAgent;
 import com.example.sporty.features.ai.agent.MatchRecommendAiAgent;
 import com.example.sporty.features.ai.domain.dto.AiRequestDto;
 import com.example.sporty.features.commons.handler.ErrorResponse;
-import com.example.sporty.features.exerciseMatching.domain.dto.MatchResponseDto;
+import com.example.sporty.features.ai.client.dto.MatchResponseDto;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;

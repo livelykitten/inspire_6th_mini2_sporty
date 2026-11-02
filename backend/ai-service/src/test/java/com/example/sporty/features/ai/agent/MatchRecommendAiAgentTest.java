@@ -24,14 +24,14 @@ import org.springframework.ai.openai.api.OpenAiApi;
 
 import com.example.sporty.features.ai.tools.MatchRecommendAiTool;
 import com.example.sporty.features.commons.util.SportType;
-import com.example.sporty.features.exerciseMatching.domain.dto.MatchResponseDto;
-import com.example.sporty.features.exerciseMatching.domain.enums.GenderGroup;
-import com.example.sporty.features.exerciseMatching.domain.enums.MatchStatus;
+import com.example.sporty.features.ai.client.dto.MatchResponseDto;
+import com.example.sporty.features.ai.client.enums.GenderGroup;
+import com.example.sporty.features.ai.client.enums.MatchStatus;
 import com.example.sporty.features.exerciseMatching.repository.MatchParticipantRepository;
 import com.example.sporty.features.exerciseMatching.service.MatchService;
-import com.example.sporty.features.profiles.domain.entity.District;
-import com.example.sporty.features.users.domain.dto.UserInfoResponseDto;
-import com.example.sporty.features.users.domain.entity.Gender;
+import com.example.sporty.features.ai.client.enums.District;
+import com.example.sporty.features.ai.client.dto.UserInfoResponseDto;
+import com.example.sporty.features.ai.client.enums.Gender;
 import com.example.sporty.features.users.service.UserService;
 
 /*

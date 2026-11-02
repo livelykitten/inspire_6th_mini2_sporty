@@ -16,14 +16,14 @@ import org.springframework.stereotype.Service;
 import com.example.sporty.features.ai.domain.dto.AiRecommendDto;
 import com.example.sporty.features.commons.exception.ai.AiRecommendException;
 import com.example.sporty.features.commons.util.SportType;
-import com.example.sporty.features.exerciseMatching.domain.dto.MatchResponseDto;
-import com.example.sporty.features.exerciseMatching.domain.dto.MatchSearchRequestDto;
-import com.example.sporty.features.exerciseMatching.domain.enums.GenderGroup;
-import com.example.sporty.features.exerciseMatching.domain.enums.MatchStatus;
+import com.example.sporty.features.ai.client.dto.MatchResponseDto;
+import com.example.sporty.features.ai.client.dto.MatchSearchRequestDto;
+import com.example.sporty.features.ai.client.enums.GenderGroup;
+import com.example.sporty.features.ai.client.enums.MatchStatus;
 import com.example.sporty.features.exerciseMatching.repository.MatchParticipantRepository;
 import com.example.sporty.features.exerciseMatching.service.MatchService;
-import com.example.sporty.features.users.domain.dto.UserInfoResponseDto;
-import com.example.sporty.features.users.domain.entity.Gender;
+import com.example.sporty.features.ai.client.dto.UserInfoResponseDto;
+import com.example.sporty.features.ai.client.enums.Gender;
 import com.example.sporty.features.users.service.UserService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -43,8 +43,8 @@ public class MatchRecommendAiAgent {
 
     // ChatClient 빈이 여러 개라 이름으로 지정한다 (AiAgentConfig의 @Bean 메서드명)
     public MatchRecommendAiAgent(@Qualifier("matchRecommendChatClient") ChatClient matchRecommendChatClient,
-            UserService userService, MatchService matchService,
-            MatchParticipantRepository matchParticipantRepository) {
+                                 UserService userService, MatchService matchService,
+                                 MatchParticipantRepository matchParticipantRepository) {
         this.matchRecommendChatClient = matchRecommendChatClient;
         this.userService = userService;
         this.matchService = matchService;

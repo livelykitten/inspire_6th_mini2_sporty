@@ -9,9 +9,9 @@ import org.springframework.stereotype.Component;
 
 import com.example.sporty.features.ai.domain.dto.AiSearchConditionDto;
 import com.example.sporty.features.commons.util.SportType;
-import com.example.sporty.features.exerciseMatching.domain.enums.GenderGroup;
-import com.example.sporty.features.exerciseMatching.domain.enums.MatchStatus;
-import com.example.sporty.features.exerciseMatching.domain.enums.SkillLevel;
+import com.example.sporty.features.ai.client.enums.GenderGroup;
+import com.example.sporty.features.ai.client.enums.MatchStatus;
+import com.example.sporty.features.ai.client.enums.SkillLevel;
 
 @Component 
 public class MatchAiTool {
