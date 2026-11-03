@@ -40,7 +40,7 @@ public class FacilityOutbox {
     private String messageKey;
 
     @Lob
-    @Column(nullable = false)
+    @Column(nullable = false, columnDefinition = "TEXT")
     private String payload;
 
     @Column(length = 10, nullable = false)
