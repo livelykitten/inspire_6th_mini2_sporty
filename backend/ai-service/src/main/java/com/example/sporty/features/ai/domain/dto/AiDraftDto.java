@@ -3,8 +3,8 @@ package com.example.sporty.features.ai.domain.dto;
 import java.time.LocalDateTime;
 
 import com.example.sporty.features.commons.util.SportType;
-import com.example.sporty.features.exerciseMatching.domain.enums.GenderGroup;
-import com.example.sporty.features.exerciseMatching.domain.enums.SkillLevel;
+import com.example.sporty.features.ai.client.enums.GenderGroup;
+import com.example.sporty.features.ai.client.enums.SkillLevel;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 import lombok.AllArgsConstructor;
