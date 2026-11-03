@@ -32,7 +32,14 @@ public class WithdrawalService {
                     event.eventId(), event.userId(), event.sagaId());
             return;
         }
-        boolean applied = transactions.complete(event); // Proxy returns only after DB commit.
+        var attempt = new WithdrawalAttempt();
+        boolean applied;
+        try {
+            applied = transactions.complete(event, attempt); // Callback runs before proxy returns.
+        } catch (RuntimeException e) {
+            if (attempt.rollbackConfirmed()) throw new WithdrawalRolledBackException(event, e);
+            throw new WithdrawalCommitUncertainException(e);
+        }
         log.info("[KAFKA] withdrawal {} eventId={} userId={} sagaId={}",
                 applied ? "completed" : "duplicate ignored", event.eventId(), event.userId(), event.sagaId());
     }
