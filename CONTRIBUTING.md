@@ -35,7 +35,7 @@ cd backend
 
 PR 과 `develop`/`main` push 마다 [.github/workflows/ci.yml](.github/workflows/ci.yml) 이 돈다.
 
-- backend: 서비스별로 `compileJava`, `compileTestJava`. 아직 경계 import 가 남은 서비스(user · match · ai)는 `wip: true` 라 실패해도 PR 이 막히지 않는다. 자기 서비스 이동 PR 이 컴파일에 성공하면 그 줄의 `wip` 를 `false` 로 바꾼다.
+- backend: 서비스별로 `compileJava`, `compileTestJava`. 서비스 7개가 모두 컴파일되어 지금은 `wip` 인 서비스가 없다. 새 서비스를 추가해 아직 컴파일되지 않을 때만 그 줄을 `wip: true` 로 둔다.
 - frontend: `npm ci` → `npm test` → `npm run build`.
 
 로컬에서 같은 확인:
@@ -108,13 +108,11 @@ docker build -f backend/config-service/Dockerfile --build-context config-repo=co
 ```bash
 cp .env.example .env
 docker compose -f compose.yaml -f compose.app.yaml up -d --build --wait
-docker compose -f compose.yaml -f compose.app.yaml --profile ai up -d --build --wait   # ai-service 포함 (PR #24 머지 후)
 docker compose -f compose.yaml -f compose.app.yaml down
 ```
 
 - 접속: 프론트 `http://localhost` (nginx 가 `/api/` 를 gateway 로 프록시, 포트는 `FRONTEND_PORT` 로 변경), gateway `:8000`, Eureka `:8761`.
 - IDE 로 서비스를 띄우는 사람은 기존처럼 `compose.yaml` 만 쓴다. 앱 컨테이너와 IDE 서비스를 같이 띄우지 않는다 (포트 충돌).
-- user · ai 의 헬스체크는 `/actuator/health` 가 401 이라 임시로 TCP 포트 검사다 (#25, PR #24 머지 후 교체).
 - 첫 기동에서 일회성 컨테이너 `kafka-init`(토픽을 만들고 종료)이 `exited (0)` 로 끝나면 `up --wait` 가 exit 1 을 줄 수 있다. 오류가 아니다. `docker compose -f compose.yaml -f compose.app.yaml ps` 에서 나머지가 모두 `healthy` 인지 본다.
 - 기동 직후 약 30~60초는 게이트웨이가 503 을 줄 수 있다 (Eureka 레지스트리 캐시). 시연 · smoke 전에 잠깐 기다린다.
 - `config-repo/` 는 `config-service` 이미지에 포함되므로 파일을 고쳤다면 `... up -d --build config-service` 로 다시 만든다.

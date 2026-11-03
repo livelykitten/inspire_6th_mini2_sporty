@@ -1,7 +1,6 @@
 # W-34 선행: 앱 서비스 7개 + 프론트(nginx). compose.yaml(DB · Redis · Kafka)에 얹어서 쓰는 override 이다.
 #
 #   docker compose -f compose.yaml -f compose.app.yaml up -d --build --wait
-#   docker compose -f compose.yaml -f compose.app.yaml --profile ai up -d --build --wait   # ai-service 포함
 #
 # 이미지는 backend/Dockerfile(master, 생성물)의 target 으로 빌드한다. 원본은 backend/{서비스}/Dockerfile 이고
 # 담당자는 거기만 고친다 (수정 후 bash scripts/gen-master-dockerfile.sh).
@@ -88,8 +87,7 @@ services:
       redis: { condition: service_healthy }
       kafka: { condition: service_healthy }
     healthcheck:
-      # TODO: user-service 의 /actuator/health 가 401 (#25). 고쳐지면 아래를 actuator 호출로 바꾼다.
-      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8001'"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8001/actuator/health > /dev/null"]
       <<: *health-actuator
 
   # 담당: 김예림 (@kimrim818-afk) · Dockerfile: backend/match-service/Dockerfile
@@ -141,23 +139,21 @@ services:
       <<: *health-actuator
 
   # 담당: 서정운 (@Jeonun-real) · Dockerfile: backend/ai-service/Dockerfile
-  # develop 에서는 컴파일이 안 되므로(PR #24 미머지) profile 로 분리했다. 머지 뒤 profiles 줄을 지운다.
   ai-service:
     <<: *app
-    profiles: ["ai"]
     build: { context: ./backend, dockerfile: Dockerfile, target: ai-service }
     image: sporty/ai-service:local
     mem_limit: 768m
     environment:
       <<: *app-env
-      OPEN_AI_KEY: ${OPEN_AI_KEY:-}
+      # 값이 비면 Spring AI 의 api-key 검증으로 기동이 실패한다. 키가 없어도 서비스가 뜨도록 더미를 둔다 (AI 호출만 실패).
+      OPEN_AI_KEY: ${OPEN_AI_KEY:-not-set-dummy-key}
     ports:
       - "8004:8004"
     depends_on:
       config-service: { condition: service_healthy }
     healthcheck:
-      # TODO: ai-service 의 /actuator/health 가 401 (PR #24 변경 요청). 고쳐지면 actuator 호출로 바꾼다.
-      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8004'"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8004/actuator/health > /dev/null"]
       <<: *health-actuator
 
   # 담당: 김우석 (@woo1956) · Dockerfile: backend/gateway-service/Dockerfile
