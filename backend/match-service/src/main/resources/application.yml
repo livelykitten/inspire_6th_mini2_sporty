@@ -59,3 +59,7 @@ resilience4j:
       default:
         timeoutDuration: 4s
 
+saga:
+  outbox:
+    enabled: ${MATCH_OUTBOX_ENABLED:true}
+    publish-delay-ms: 1000
