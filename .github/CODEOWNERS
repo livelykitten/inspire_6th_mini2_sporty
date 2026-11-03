@@ -35,5 +35,6 @@ Dockerfile                   @salieri009
 /backend/match-service/Dockerfile      @kimrim818-afk @salieri009
 /backend/facility-service/Dockerfile   @seohynee @salieri009
 /backend/ai-service/Dockerfile         @Jeonun-real @salieri009
+/infra/                      @salieri009
 
 # TODO(W-02 명세 확정 후): 서비스 간 API · Kafka 이벤트 명세 파일이 생기면 @livelykitten 을 리뷰어로 추가한다.
