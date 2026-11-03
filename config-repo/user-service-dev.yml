@@ -1,0 +1,9 @@
+# 배포(dev 프로필, compose.aws.yaml 이 SPRING_PROFILES_ACTIVE=dev 를 준다) 전용. 이슈 #38.
+# 기본 파일(user-service.yml)의 로컬 전용 {cipher} 값 대신 환경변수(Secrets Manager 가 만든 값)를 쓴다.
+# 프로필 파일이 기본 파일보다 우선하므로 여기서 자리표시자로 되돌리면 환경변수가 이긴다.
+spring:
+  datasource:
+    password: ${DB_PASSWORD}
+
+jwt:
+  secret: ${JWT_SECRET_KEY}

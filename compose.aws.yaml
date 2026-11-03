@@ -36,6 +36,8 @@ services:
   user-service:
     ports: !override ["127.0.0.1:8001:8001"]
     environment:
+      # dev 프로필: config-repo/{서비스}-dev.yml 이 로컬 전용 암호문을 환경변수로 덮어쓴다 (이슈 #38)
+      SPRING_PROFILES_ACTIVE: dev
       DB_URL: jdbc:mariadb://${USER_RDS_ENDPOINT:?USER_RDS_ENDPOINT 를 설정하세요}:3306/user_db
       DB_USERNAME: user_svc
       DB_PASSWORD: ${USER_DB_PASSWORD:?USER_DB_PASSWORD 를 설정하세요}
@@ -47,6 +49,7 @@ services:
   match-service:
     ports: !override ["127.0.0.1:8002:8002"]
     environment:
+      SPRING_PROFILES_ACTIVE: dev
       DB_URL: jdbc:mariadb://${MATCH_RDS_ENDPOINT:?MATCH_RDS_ENDPOINT 를 설정하세요}:3306/match_db
       DB_USERNAME: match_svc
       DB_PASSWORD: ${MATCH_DB_PASSWORD:?MATCH_DB_PASSWORD 를 설정하세요}
@@ -57,6 +60,7 @@ services:
   facility-service:
     ports: !override ["127.0.0.1:8003:8003"]
     environment:
+      SPRING_PROFILES_ACTIVE: dev
       DB_URL: jdbc:mariadb://${FACILITY_RDS_ENDPOINT:?FACILITY_RDS_ENDPOINT 를 설정하세요}:3306/facility_db
       DB_USERNAME: facility_svc
       DB_PASSWORD: ${FACILITY_DB_PASSWORD:?FACILITY_DB_PASSWORD 를 설정하세요}
@@ -69,3 +73,5 @@ services:
 
   gateway-service:
     ports: !override ["127.0.0.1:8000:8000"]
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
