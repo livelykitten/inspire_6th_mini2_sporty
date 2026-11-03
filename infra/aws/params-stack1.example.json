@@ -2,7 +2,7 @@
   { "ParameterKey": "ProjectName", "ParameterValue": "sporty" },
   { "ParameterKey": "EnvName", "ParameterValue": "prod" },
   { "ParameterKey": "LogRetentionDays", "ParameterValue": "7" },
-  { "ParameterKey": "DbEngineVersion", "ParameterValue": "11.4" },
+  { "ParameterKey": "DbEngineVersion", "ParameterValue": "11.4.13" },
   { "ParameterKey": "DbParameterFamily", "ParameterValue": "mariadb11.4" },
   { "ParameterKey": "DbInstanceClass", "ParameterValue": "db.t4g.micro" },
   { "ParameterKey": "DbAllocatedStorage", "ParameterValue": "20" },

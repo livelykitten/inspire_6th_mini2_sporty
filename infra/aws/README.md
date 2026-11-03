@@ -86,7 +86,7 @@ sudo docker stop sporty-frontend-1        # 컨테이너 이름은 docker ps 로
 |---|---|---|
 | `ProjectName` / `EnvName` | `sporty` / `prod` | 리소스 이름 접두어. stack2 와 같게 |
 | `LogRetentionDays` | 7 | 로그 보존 일수 |
-| `DbEngineVersion` / `DbParameterFamily` | `11.4` / `mariadb11.4` | 서울에서 11.4 가 없으면 `10.11` / `mariadb10.11` 로 둘 다 바꾼다 |
+| `DbEngineVersion` / `DbParameterFamily` | `11.4.13` / `mariadb11.4` | 서울 리전에서 `11.4.13` 생성 확인. 없어지면 `10.11` / `mariadb10.11` 처럼 둘 다 바꾼다 |
 | `DbInstanceClass` / `DbAllocatedStorage` | `db.t4g.micro` / 20 | 인스턴스당 |
 | `CreateGithubOidcProvider` / `ExistingOidcProviderArn` | `true` / 빈 값 | OIDC 공급자는 계정당 URL 하나 |
 | `GithubRepo` / `GithubExtraRef` | `livelykitten/inspire_6th_mini2_sporty` / `refs/heads/develop` | ECR push 를 허용할 저장소와 추가 ref (develop · main · 태그는 항상 허용) |
@@ -125,6 +125,16 @@ sudo docker stop sporty-frontend-1        # 컨테이너 이름은 docker ps 로
 ## 대략 비용 (추정, 정확한 단가는 AWS 요금표로 확인)
 
 EC2 t3.xlarge · NAT Gateway · ALB · RDS db.t4g.micro ×3 · 로그 · 시크릿을 합쳐 **하루 1만 원 안팎**으로 본다. t3 는 CPU 크레딧 초과 요금이 날 수 있으니 CPU 알람과 예산 알림을 켜 둔다. 발표 직후 삭제한다.
+
+## 실제 배포로 확인한 것 (2026-11-03 시험, EnvName=test)
+
+- stack1 약 10분, stack2 약 4분 + EC2 부트스트랩(이미지 빌드 포함) 약 6분 후 ALB 주소로 `smoke.sh` 9항목 통과. 시험 뒤 stack2 → stack1 삭제는 약 4분, 남은 리소스 없음.
+- RDS MariaDB `11.4.13` · `db.t4g.micro` ×3, EC2 `t3.xlarge`: 컨테이너 전체 메모리 약 3.2GiB / 15.8GiB, 루트 디스크 5.3GB / 30GB.
+- 호스트 공개 포트는 80 뿐 (나머지 서비스는 127.0.0.1). 서비스 로그는 CloudWatch Logs 서비스별 그룹으로 올라가고, 메모리 · 디스크 지표는 CloudWatch Agent 로 올라온다.
+- 알람 → SNS → Discord Lambda 경로가 실제 알람 전환으로 동작했다. 웹훅 URL 이 `CHANGE_ME` 이면 Lambda 가 "전송 생략" 로그만 남긴다.
+- **첫 배포 중 15~20분 동안 `alb-unhealthy-host` · `ec2-cpu-high` 알람이 울리는 것은 정상이다** (nginx 가 뜨기 전 대상이 비정상, 이미지 빌드로 CPU 급등). 부트스트랩이 끝나면 몇 분 안에 OK 로 돌아온다.
+- 이미지를 병렬로 빌드하면 Gradle 캐시 락 경합으로 실패할 수 있어 Dockerfile 의 캐시 마운트를 `sharing=locked` 로 고쳤다 (W-35 브랜치). 이 수정이 들어간 `GitRef` 를 써야 한다.
+- Windows 의 AWS CLI 로 한글이 들어간 템플릿을 올릴 때는 `AWS_CLI_FILE_ENCODING=UTF-8` 환경변수가 필요하다 (콘솔 업로드는 해당 없음).
 
 ## 실패했을 때
 

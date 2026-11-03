@@ -300,9 +300,19 @@ Resources:
                 Action: secretsmanager:GetSecretValue
                 Resource: !Ref DiscordWebhookSecret
 
+  # Lambda 가 자동으로 만드는 로그 그룹은 스택에 속하지 않아 삭제 뒤에도 남는다. 스택이 직접 만들어 함께 지운다.
+  DiscordNotifierLogGroup:
+    Type: AWS::Logs::LogGroup
+    Condition: UseDiscord
+    DeletionPolicy: Delete
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${ProjectName}-${EnvName}-discord-notifier"
+      RetentionInDays: 7
+
   DiscordNotifierFunction:
     Type: AWS::Lambda::Function
     Condition: UseDiscord
+    DependsOn: DiscordNotifierLogGroup
     Properties:
       FunctionName: !Sub "${ProjectName}-${EnvName}-discord-notifier"
       Runtime: python3.12

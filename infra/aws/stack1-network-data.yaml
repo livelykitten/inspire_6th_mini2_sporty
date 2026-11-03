@@ -34,8 +34,8 @@ Parameters:
     Description: 컨테이너 로그 보존 일수 (비용 절감용으로 짧게)
   DbEngineVersion:
     Type: String
-    Default: "11.4"
-    Description: RDS MariaDB 엔진 버전. 리전에서 지원하지 않으면 10.11 등으로 바꾸고 DbParameterFamily 도 맞춘다
+    Default: "11.4.13"
+    Description: RDS MariaDB 엔진 버전 (서울 리전에서 11.4.13 으로 생성 확인). 지원하지 않게 되면 describe-db-engine-versions 로 확인해 바꾸고 DbParameterFamily 도 맞춘다
   DbParameterFamily:
     Type: String
     Default: mariadb11.4
