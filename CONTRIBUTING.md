@@ -96,10 +96,25 @@ docker build -f backend/config-service/Dockerfile --build-context config-repo=co
 
 - **담당자는 자기 서비스 Dockerfile 만 고친다.** 각 파일 맨 위 주석에 담당자 · 작업 위치 · 빌드 명령이 적혀 있다. 브랜치는 `feat/{서비스}-…`, 리뷰어는 CODEOWNERS 로 담당자 + 반정욱이 자동 지정된다.
 - **master(`backend/Dockerfile`)는 생성물이라 직접 고치지 않는다.** 서비스별 Dockerfile 7개를 이어 붙인 파일이고, 서비스 Dockerfile 을 고친 뒤 `bash scripts/gen-master-dockerfile.sh` 를 실행해 같이 커밋한다 (CI 가 `--check` 로 최신 여부를 검사한다).
-- master 는 컨테이너를 실행하지 않는다. `--target {서비스}` 로 이미지를 뽑는 진입점이고, 전체를 한 번에 띄우는 앱 Compose 는 W-34 선행 PR 에서 추가한다.
+- master 는 컨테이너를 실행하지 않는다. `--target {서비스}` 로 이미지를 뽑는 진입점이고, 전체를 한 번에 띄우는 것은 아래 앱 Compose 가 한다.
 - ai-service 는 PR #24 가 머지되기 전까지 컴파일되지 않아 이미지가 만들어지지 않는다.
 - 이미지 안에는 `.env` 를 넣지 않는다 (`backend/.dockerignore`). 설정은 환경변수로 넘긴다.
 - JVM 메모리는 `JAVA_TOOL_OPTIONS` 의 `MaxRAMPercentage=75` 로 컨테이너 한도에 맞춘다. 바꾸려면 `-e JAVA_TOOL_OPTIONS=...` 로 덮어쓴다.
+
+## 전체 스택 기동 (W-34 선행)
+
+`compose.app.yaml` 이 master 의 target 7개와 프론트(nginx)를 `compose.yaml`(DB · Redis · Kafka) 위에 올린다. `.env` 의 `JWT_SECRET_KEY` 는 필수다 (`.env.example` 을 복사).
+
+```bash
+cp .env.example .env
+docker compose -f compose.yaml -f compose.app.yaml up -d --build --wait
+docker compose -f compose.yaml -f compose.app.yaml --profile ai up -d --build --wait   # ai-service 포함 (PR #24 머지 후)
+docker compose -f compose.yaml -f compose.app.yaml down
+```
+
+- 접속: 프론트 `http://localhost` (nginx 가 `/api/` 를 gateway 로 프록시, 포트는 `FRONTEND_PORT` 로 변경), gateway `:8000`, Eureka `:8761`.
+- IDE 로 서비스를 띄우는 사람은 기존처럼 `compose.yaml` 만 쓴다. 앱 컨테이너와 IDE 서비스를 같이 띄우지 않는다 (포트 충돌).
+- user · ai 의 헬스체크는 `/actuator/health` 가 401 이라 임시로 TCP 포트 검사다 (#25, PR #24 머지 후 교체).
 
 ## 서비스 코드 배치 (구조만 나눈 상태)
 
