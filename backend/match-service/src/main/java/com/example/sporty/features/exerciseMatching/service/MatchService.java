@@ -199,6 +199,7 @@ public class MatchService {
 
         // Validate the catalog before creating either match or participant records.
         FacilityServiceSnapshotEntity service = facilityServiceSnapshotRepository.findById(req.getServiceId())
+            .filter(snapshot -> Boolean.TRUE.equals(snapshot.getActive()))
             .orElseThrow(ServiceNotFoundException::new);
 
         // 3. create MatchEntity and save
