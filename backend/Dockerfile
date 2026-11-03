@@ -27,11 +27,12 @@ RUN --mount=type=cache,target=/root/.gradle,sharing=locked \
     ./gradlew :discovery-service:bootJar -x test --no-daemon \
     && cp discovery-service/build/libs/discovery-service-*-SNAPSHOT.jar /workspace/app.jar
 
-FROM eclipse-temurin:17-jre AS discovery-service
+# 런타임은 Alpine JRE(257MB, Ubuntu JRE 는 432MB)로 이미지를 줄인다. Alpine 에는 curl · bash 가 없다 (헬스체크는 busybox wget 사용).
+FROM eclipse-temurin:17-jre-alpine AS discovery-service
 ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75 -Duser.timezone=Asia/Seoul"
 WORKDIR /app
 
-RUN useradd --system --uid 1001 sporty
+RUN addgroup -S -g 1001 sporty && adduser -S -u 1001 -G sporty sporty
 COPY --from=discovery-service-build --chown=sporty:sporty /workspace/app.jar app.jar
 USER sporty
 
@@ -61,12 +62,13 @@ RUN --mount=type=cache,target=/root/.gradle,sharing=locked \
     ./gradlew :config-service:bootJar -x test --no-daemon \
     && cp config-service/build/libs/config-service-*-SNAPSHOT.jar /workspace/app.jar
 
-FROM eclipse-temurin:17-jre AS config-service
+# 런타임은 Alpine JRE(257MB, Ubuntu JRE 는 432MB)로 이미지를 줄인다. Alpine 에는 curl · bash 가 없다 (헬스체크는 busybox wget 사용).
+FROM eclipse-temurin:17-jre-alpine AS config-service
 ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75 -Duser.timezone=Asia/Seoul"
 ENV CONFIG_REPO_PATH=file:/config-repo
 WORKDIR /app
 
-RUN useradd --system --uid 1001 sporty
+RUN addgroup -S -g 1001 sporty && adduser -S -u 1001 -G sporty sporty
 COPY --from=config-service-build --chown=sporty:sporty /workspace/app.jar app.jar
 COPY --from=config-repo --chown=sporty:sporty . /config-repo
 USER sporty
@@ -96,11 +98,12 @@ RUN --mount=type=cache,target=/root/.gradle,sharing=locked \
     ./gradlew :gateway-service:bootJar -x test --no-daemon \
     && cp gateway-service/build/libs/gateway-service-*-SNAPSHOT.jar /workspace/app.jar
 
-FROM eclipse-temurin:17-jre AS gateway-service
+# 런타임은 Alpine JRE(257MB, Ubuntu JRE 는 432MB)로 이미지를 줄인다. Alpine 에는 curl · bash 가 없다 (헬스체크는 busybox wget 사용).
+FROM eclipse-temurin:17-jre-alpine AS gateway-service
 ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75 -Duser.timezone=Asia/Seoul"
 WORKDIR /app
 
-RUN useradd --system --uid 1001 sporty
+RUN addgroup -S -g 1001 sporty && adduser -S -u 1001 -G sporty sporty
 COPY --from=gateway-service-build --chown=sporty:sporty /workspace/app.jar app.jar
 USER sporty
 
@@ -129,11 +132,12 @@ RUN --mount=type=cache,target=/root/.gradle,sharing=locked \
     ./gradlew :user-service:bootJar -x test --no-daemon \
     && cp user-service/build/libs/user-service-*-SNAPSHOT.jar /workspace/app.jar
 
-FROM eclipse-temurin:17-jre AS user-service
+# 런타임은 Alpine JRE(257MB, Ubuntu JRE 는 432MB)로 이미지를 줄인다. Alpine 에는 curl · bash 가 없다 (헬스체크는 busybox wget 사용).
+FROM eclipse-temurin:17-jre-alpine AS user-service
 ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75 -Duser.timezone=Asia/Seoul"
 WORKDIR /app
 
-RUN useradd --system --uid 1001 sporty
+RUN addgroup -S -g 1001 sporty && adduser -S -u 1001 -G sporty sporty
 COPY --from=user-service-build --chown=sporty:sporty /workspace/app.jar app.jar
 USER sporty
 
@@ -162,11 +166,12 @@ RUN --mount=type=cache,target=/root/.gradle,sharing=locked \
     ./gradlew :match-service:bootJar -x test --no-daemon \
     && cp match-service/build/libs/match-service-*-SNAPSHOT.jar /workspace/app.jar
 
-FROM eclipse-temurin:17-jre AS match-service
+# 런타임은 Alpine JRE(257MB, Ubuntu JRE 는 432MB)로 이미지를 줄인다. Alpine 에는 curl · bash 가 없다 (헬스체크는 busybox wget 사용).
+FROM eclipse-temurin:17-jre-alpine AS match-service
 ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75 -Duser.timezone=Asia/Seoul"
 WORKDIR /app
 
-RUN useradd --system --uid 1001 sporty
+RUN addgroup -S -g 1001 sporty && adduser -S -u 1001 -G sporty sporty
 COPY --from=match-service-build --chown=sporty:sporty /workspace/app.jar app.jar
 USER sporty
 
@@ -195,11 +200,12 @@ RUN --mount=type=cache,target=/root/.gradle,sharing=locked \
     ./gradlew :facility-service:bootJar -x test --no-daemon \
     && cp facility-service/build/libs/facility-service-*-SNAPSHOT.jar /workspace/app.jar
 
-FROM eclipse-temurin:17-jre AS facility-service
+# 런타임은 Alpine JRE(257MB, Ubuntu JRE 는 432MB)로 이미지를 줄인다. Alpine 에는 curl · bash 가 없다 (헬스체크는 busybox wget 사용).
+FROM eclipse-temurin:17-jre-alpine AS facility-service
 ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75 -Duser.timezone=Asia/Seoul"
 WORKDIR /app
 
-RUN useradd --system --uid 1001 sporty
+RUN addgroup -S -g 1001 sporty && adduser -S -u 1001 -G sporty sporty
 COPY --from=facility-service-build --chown=sporty:sporty /workspace/app.jar app.jar
 USER sporty
 
@@ -228,11 +234,12 @@ RUN --mount=type=cache,target=/root/.gradle,sharing=locked \
     ./gradlew :ai-service:bootJar -x test --no-daemon \
     && cp ai-service/build/libs/ai-service-*-SNAPSHOT.jar /workspace/app.jar
 
-FROM eclipse-temurin:17-jre AS ai-service
+# 런타임은 Alpine JRE(257MB, Ubuntu JRE 는 432MB)로 이미지를 줄인다. Alpine 에는 curl · bash 가 없다 (헬스체크는 busybox wget 사용).
+FROM eclipse-temurin:17-jre-alpine AS ai-service
 ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75 -Duser.timezone=Asia/Seoul"
 WORKDIR /app
 
-RUN useradd --system --uid 1001 sporty
+RUN addgroup -S -g 1001 sporty && adduser -S -u 1001 -G sporty sporty
 COPY --from=ai-service-build --chown=sporty:sporty /workspace/app.jar app.jar
 USER sporty
 

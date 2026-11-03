@@ -69,6 +69,8 @@ jobs:
           build-contexts: |
             config-repo=config-repo
           push: true
+          provenance: false
+          sbom: false
           tags: |
             ${{ steps.ecr.outputs.registry }}/${{ env.ECR_PREFIX }}/${{ matrix.service }}:${{ github.sha }}
             ${{ steps.ecr.outputs.registry }}/${{ env.ECR_PREFIX }}/${{ matrix.service }}:latest
@@ -101,6 +103,8 @@ jobs:
         with:
           context: frontend
           push: true
+          provenance: false
+          sbom: false
           tags: |
             ${{ steps.ecr.outputs.registry }}/${{ env.ECR_PREFIX }}/frontend:${{ github.sha }}
             ${{ steps.ecr.outputs.registry }}/${{ env.ECR_PREFIX }}/frontend:latest

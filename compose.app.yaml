@@ -40,7 +40,7 @@ services:
       - "8761:8761"
     healthcheck:
       # discovery 는 actuator 가 없어 Eureka 화면(/)으로 확인한다.
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8761/ > /dev/null"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8761/"]
       <<: *health-actuator
 
   # 담당: 김우석 (@woo1956) · Dockerfile: backend/config-service/Dockerfile
@@ -62,7 +62,7 @@ services:
     depends_on:
       discovery-service: { condition: service_healthy }
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8888/actuator/health > /dev/null"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8888/actuator/health"]
       <<: *health-actuator
 
   # 담당: 송석주 (@songsj27) · Dockerfile: backend/user-service/Dockerfile
@@ -87,7 +87,7 @@ services:
       redis: { condition: service_healthy }
       kafka: { condition: service_healthy }
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8001/actuator/health > /dev/null"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8001/actuator/health"]
       <<: *health-actuator
 
   # 담당: 김예림 (@kimrim818-afk) · Dockerfile: backend/match-service/Dockerfile
@@ -109,7 +109,7 @@ services:
       match-db: { condition: service_healthy }
       kafka: { condition: service_healthy }
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8002/actuator/health > /dev/null"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8002/actuator/health"]
       <<: *health-actuator
 
   # 담당: 이서현 (@seohynee) · Dockerfile: backend/facility-service/Dockerfile
@@ -135,7 +135,7 @@ services:
       facility-db: { condition: service_healthy }
       kafka: { condition: service_healthy }
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8003/actuator/health > /dev/null"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8003/actuator/health"]
       <<: *health-actuator
 
   # 담당: 서정운 (@Jeonun-real) · Dockerfile: backend/ai-service/Dockerfile
@@ -153,7 +153,7 @@ services:
     depends_on:
       config-service: { condition: service_healthy }
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8004/actuator/health > /dev/null"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8004/actuator/health"]
       <<: *health-actuator
 
   # 담당: 김우석 (@woo1956) · Dockerfile: backend/gateway-service/Dockerfile
@@ -174,7 +174,7 @@ services:
       match-service: { condition: service_healthy }
       facility-service: { condition: service_healthy }
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/actuator/health > /dev/null"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8000/actuator/health"]
       <<: *health-actuator
 
   # 담당: 반정욱 (@salieri009) · Dockerfile: frontend/Dockerfile (master 대상 아님)

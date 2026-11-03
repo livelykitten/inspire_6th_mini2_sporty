@@ -20,11 +20,12 @@ RUN --mount=type=cache,target=/root/.gradle,sharing=locked \
     ./gradlew :match-service:bootJar -x test --no-daemon \
     && cp match-service/build/libs/match-service-*-SNAPSHOT.jar /workspace/app.jar
 
-FROM eclipse-temurin:17-jre AS runtime
+# 런타임은 Alpine JRE(257MB, Ubuntu JRE 는 432MB)로 이미지를 줄인다. Alpine 에는 curl · bash 가 없다 (헬스체크는 busybox wget 사용).
+FROM eclipse-temurin:17-jre-alpine AS runtime
 ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75 -Duser.timezone=Asia/Seoul"
 WORKDIR /app
 
-RUN useradd --system --uid 1001 sporty
+RUN addgroup -S -g 1001 sporty && adduser -S -u 1001 -G sporty sporty
 COPY --from=build --chown=sporty:sporty /workspace/app.jar app.jar
 USER sporty
 
