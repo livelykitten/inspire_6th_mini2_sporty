@@ -157,6 +157,9 @@ public class FacilitySyncService {
             }
         }
 
+        int outboxSavedCount = createdCount + updatedCount + deactivatedCount;
+        log.info("[KAFKA] 동기화로 저장한 outbox 건수: {}건", outboxSavedCount);
+
         return new SyncResult(
                 rows.size(),
                 createdCount,

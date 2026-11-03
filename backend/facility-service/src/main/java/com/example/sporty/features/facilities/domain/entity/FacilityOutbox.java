@@ -65,5 +65,14 @@ public class FacilityOutbox {
         this.status = "PENDING";
         this.attemptCount = 0;
     }
+
+    public void markSent() {
+        this.status = "SENT";
+        this.sentAt = LocalDateTime.now();
+    }
+
+    public void markFailed() {
+        this.attemptCount++;
+    }
 }
 
