@@ -1,0 +1,15 @@
+[
+  { "ParameterKey": "ProjectName", "ParameterValue": "sporty" },
+  { "ParameterKey": "EnvName", "ParameterValue": "prod" },
+  { "ParameterKey": "LogRetentionDays", "ParameterValue": "7" },
+  { "ParameterKey": "DbEngineVersion", "ParameterValue": "11.4" },
+  { "ParameterKey": "DbParameterFamily", "ParameterValue": "mariadb11.4" },
+  { "ParameterKey": "DbInstanceClass", "ParameterValue": "db.t4g.micro" },
+  { "ParameterKey": "DbAllocatedStorage", "ParameterValue": "20" },
+  { "ParameterKey": "CreateGithubOidcProvider", "ParameterValue": "true" },
+  { "ParameterKey": "ExistingOidcProviderArn", "ParameterValue": "" },
+  { "ParameterKey": "GithubRepo", "ParameterValue": "livelykitten/inspire_6th_mini2_sporty" },
+  { "ParameterKey": "GithubExtraRef", "ParameterValue": "refs/heads/develop" },
+  { "ParameterKey": "BudgetEmail", "ParameterValue": "change-me@example.com" },
+  { "ParameterKey": "MonthlyBudgetUsd", "ParameterValue": "100" }
+]

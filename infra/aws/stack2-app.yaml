@@ -1,0 +1,868 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  Sporty 1단계 배포 stack2 - 앱 EC2(Docker Compose), ALB(HTTP 80, 인증서가 있으면 443), CloudWatch 알람/대시보드, SNS 이메일.
+  stack1(network-data)을 먼저 만들고 이 스택은 그 export 를 가져다 쓴다.
+  담당: 반정욱 (@salieri009) / 작업 위치: infra/aws/stack2-app.yaml / 런북: infra/aws/README.md
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label: { default: "연결" }
+        Parameters: [Stack1Name, ProjectName, EnvName]
+      - Label: { default: "EC2" }
+        Parameters: [InstanceType, VolumeSizeGb, AmiId]
+      - Label: { default: "배포 방식" }
+        Parameters: [GitRepoUrl, GitRef, DeployMode, ImageTag]
+      - Label: { default: "ALB / 알람" }
+        Parameters: [CertificateArn, AlarmEmail]
+
+Parameters:
+  Stack1Name:
+    Type: String
+    Description: 먼저 만든 stack1 의 스택 이름 (export 이름 접두어)
+  ProjectName:
+    Type: String
+    Default: sporty
+    Description: stack1 과 같은 값
+  EnvName:
+    Type: String
+    Default: prod
+    Description: stack1 과 같은 값
+  InstanceType:
+    Type: String
+    Default: t3.xlarge
+    AllowedValues: [t3.large, t3.xlarge, t3.2xlarge]
+    Description: 16GB 메모리 기준 t3.xlarge. 메모리 알람(85%)이 울리면 올린다
+  VolumeSizeGb:
+    Type: Number
+    Default: 30
+    MinValue: 20
+    MaxValue: 100
+  AmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+    Description: Amazon Linux 2023 최신 AMI (SSM 파라미터)
+  GitRepoUrl:
+    Type: String
+    Default: https://github.com/livelykitten/inspire_6th_mini2_sporty.git
+  GitRef:
+    Type: String
+    Default: develop
+    Description: EC2 가 clone 할 브랜치 또는 태그 (deploy/ec2 스크립트와 compose 파일이 들어 있어야 함)
+  DeployMode:
+    Type: String
+    Default: build
+    AllowedValues: [build, ecr]
+    Description: build = EC2 가 소스를 받아 직접 빌드(느리지만 ECR/OIDC 불필요), ecr = ECR 이미지를 pull
+  ImageTag:
+    Type: String
+    Default: latest
+    Description: DeployMode=ecr 일 때 쓸 이미지 태그
+  CertificateArn:
+    Type: String
+    Default: ""
+    Description: ACM 인증서 ARN. 비우면 HTTP 80 만 열고, 있으면 443 + 80 -> 443 리다이렉트
+  AlarmEmail:
+    Type: String
+    AllowedPattern: "[^@ ]+@[^@ ]+"
+    Description: 알람 이메일. 스택 생성 후 AWS 가 보내는 확인 메일을 눌러야 알람이 온다
+
+Conditions:
+  HasCertificate: !Not [!Equals [!Ref CertificateArn, ""]]
+  NoCertificate: !Equals [!Ref CertificateArn, ""]
+
+Resources:
+  # ---------------------------------------------------------------- EC2 (Docker Compose 호스트)
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Sporty app EC2 - SSM, CloudWatch Agent, read own secrets and ECR images
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ec2.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+      Policies:
+        - PolicyName: sporty-app-read
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource:
+                  - { "Fn::ImportValue": !Sub "${Stack1Name}-DbPasswordUserArn" }
+                  - { "Fn::ImportValue": !Sub "${Stack1Name}-DbPasswordMatchArn" }
+                  - { "Fn::ImportValue": !Sub "${Stack1Name}-DbPasswordFacilityArn" }
+                  - { "Fn::ImportValue": !Sub "${Stack1Name}-JwtSecretArn" }
+                  - { "Fn::ImportValue": !Sub "${Stack1Name}-EncryptSecretArn" }
+                  - { "Fn::ImportValue": !Sub "${Stack1Name}-ExternalKeysSecretArn" }
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:BatchGetImage
+                  - ecr:GetDownloadUrlForLayer
+                Resource: !Sub "arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/${ProjectName}/*"
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogStreams
+                Resource: !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/${ProjectName}/${EnvName}/*:*"
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles: [!Ref InstanceRole]
+
+  AppInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref AmiId
+      InstanceType: !Ref InstanceType
+      SubnetId: { "Fn::ImportValue": !Sub "${Stack1Name}-AppSubnetAId" }
+      SecurityGroupIds:
+        - { "Fn::ImportValue": !Sub "${Stack1Name}-AppSecurityGroupId" }
+      IamInstanceProfile: !Ref InstanceProfile
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeType: gp3
+            VolumeSize: !Ref VolumeSizeGb
+            Encrypted: true
+            DeleteOnTermination: true
+      MetadataOptions:
+        HttpTokens: required
+        HttpPutResponseHopLimit: 2
+      Tags:
+        - { Key: Name, Value: !Sub "${ProjectName}-${EnvName}-app" }
+      # user-data 는 얇게 둔다. 설치/배포 로직은 저장소의 deploy/ec2/*.sh (GitRef) 에 있어서 스택 변경 없이 git pull 로 고친다.
+      # 값에 쉘 변수가 들어가지 않도록 ${...} 는 CloudFormation 치환에만 쓴다.
+      UserData:
+        Fn::Base64:
+          Fn::Sub:
+            - |
+              #!/bin/bash
+              set -euxo pipefail
+              exec > >(tee -a /var/log/sporty-userdata.log) 2>&1
+              dnf install -y git
+              mkdir -p /etc/sporty
+              cat > /etc/sporty/aws.env <<'ENVEOF'
+              AWS_REGION=${AWS::Region}
+              ENV_NAME=${EnvName}
+              PROJECT_NAME=${ProjectName}
+              GIT_REF=${GitRef}
+              DEPLOY_MODE=${DeployMode}
+              IMAGE_TAG=${ImageTag}
+              ECR_REGISTRY=${EcrRegistry}
+              USER_RDS_ENDPOINT=${UserDbEndpoint}
+              MATCH_RDS_ENDPOINT=${MatchDbEndpoint}
+              FACILITY_RDS_ENDPOINT=${FacilityDbEndpoint}
+              SECRET_DB_USER_ARN=${DbUserArn}
+              SECRET_DB_MATCH_ARN=${DbMatchArn}
+              SECRET_DB_FACILITY_ARN=${DbFacilityArn}
+              SECRET_JWT_ARN=${JwtArn}
+              SECRET_ENCRYPT_ARN=${EncryptArn}
+              SECRET_EXTERNAL_ARN=${ExternalArn}
+              ENVEOF
+              chmod 600 /etc/sporty/aws.env
+              git clone --depth 1 --branch ${GitRef} ${GitRepoUrl} /opt/sporty
+              bash /opt/sporty/deploy/ec2/bootstrap.sh
+              bash /opt/sporty/deploy/ec2/deploy.sh
+            - EcrRegistry: { "Fn::ImportValue": !Sub "${Stack1Name}-EcrRegistry" }
+              UserDbEndpoint: { "Fn::ImportValue": !Sub "${Stack1Name}-UserDbEndpoint" }
+              MatchDbEndpoint: { "Fn::ImportValue": !Sub "${Stack1Name}-MatchDbEndpoint" }
+              FacilityDbEndpoint: { "Fn::ImportValue": !Sub "${Stack1Name}-FacilityDbEndpoint" }
+              DbUserArn: { "Fn::ImportValue": !Sub "${Stack1Name}-DbPasswordUserArn" }
+              DbMatchArn: { "Fn::ImportValue": !Sub "${Stack1Name}-DbPasswordMatchArn" }
+              DbFacilityArn: { "Fn::ImportValue": !Sub "${Stack1Name}-DbPasswordFacilityArn" }
+              JwtArn: { "Fn::ImportValue": !Sub "${Stack1Name}-JwtSecretArn" }
+              EncryptArn: { "Fn::ImportValue": !Sub "${Stack1Name}-EncryptSecretArn" }
+              ExternalArn: { "Fn::ImportValue": !Sub "${Stack1Name}-ExternalKeysSecretArn" }
+
+  # ---------------------------------------------------------------- ALB (단일 대상 그룹 -> EC2:80 nginx, nginx 가 /api/ 를 gateway 로 프록시)
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub "${ProjectName}-${EnvName}-alb"
+      Type: application
+      Scheme: internet-facing
+      Subnets:
+        - { "Fn::ImportValue": !Sub "${Stack1Name}-PublicSubnetAId" }
+        - { "Fn::ImportValue": !Sub "${Stack1Name}-PublicSubnetBId" }
+      SecurityGroups:
+        - { "Fn::ImportValue": !Sub "${Stack1Name}-AlbSecurityGroupId" }
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub "${ProjectName}-${EnvName}-tg"
+      VpcId: { "Fn::ImportValue": !Sub "${Stack1Name}-VpcId" }
+      Protocol: HTTP
+      Port: 80
+      TargetType: instance
+      Targets:
+        - { Id: !Ref AppInstance, Port: 80 }
+      HealthCheckPath: /healthz
+      HealthCheckIntervalSeconds: 15
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      Matcher: { HttpCode: "200" }
+      TargetGroupAttributes:
+        - { Key: deregistration_delay.timeout_seconds, Value: "30" }
+
+  HttpListenerForward:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: NoCertificate
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - { Type: forward, TargetGroupArn: !Ref TargetGroup }
+
+  HttpListenerRedirect:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: HasCertificate
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: redirect
+          RedirectConfig: { Protocol: HTTPS, Port: "443", StatusCode: HTTP_301 }
+
+  HttpsListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: HasCertificate
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: !Ref CertificateArn
+      DefaultActions:
+        - { Type: forward, TargetGroupArn: !Ref TargetGroup }
+
+  # ---------------------------------------------------------------- 알림 (SNS 이메일)
+  AlarmTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "${ProjectName}-${EnvName}-alarms"
+      Subscription:
+        - { Protocol: email, Endpoint: !Ref AlarmEmail }
+
+  # ---------------------------------------------------------------- CloudWatch 알람: ALB
+  AlbUnhealthyHostAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectName}-${EnvName}-alb-unhealthy-host"
+      AlarmDescription: ALB 대상 그룹에 비정상 호스트가 있다 (nginx /healthz 실패)
+      Namespace: AWS/ApplicationELB
+      MetricName: UnHealthyHostCount
+      Dimensions:
+        - { Name: LoadBalancer, Value: !GetAtt LoadBalancer.LoadBalancerFullName }
+        - { Name: TargetGroup, Value: !GetAtt TargetGroup.TargetGroupFullName }
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
+  AlbTarget5xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectName}-${EnvName}-alb-target-5xx"
+      AlarmDescription: 대상(EC2)이 5xx 를 반환했다 (게이트웨이 503/500 포함)
+      Namespace: AWS/ApplicationELB
+      MetricName: HTTPCode_Target_5XX_Count
+      Dimensions:
+        - { Name: LoadBalancer, Value: !GetAtt LoadBalancer.LoadBalancerFullName }
+        - { Name: TargetGroup, Value: !GetAtt TargetGroup.TargetGroupFullName }
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
+  AlbElb5xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectName}-${EnvName}-alb-elb-5xx"
+      AlarmDescription: ALB 자체가 5xx 를 반환했다 (대상 없음/연결 실패)
+      Namespace: AWS/ApplicationELB
+      MetricName: HTTPCode_ELB_5XX_Count
+      Dimensions:
+        - { Name: LoadBalancer, Value: !GetAtt LoadBalancer.LoadBalancerFullName }
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
+  AlbLatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectName}-${EnvName}-alb-latency-p95"
+      AlarmDescription: 응답 시간 p95 가 3초를 넘었다
+      Namespace: AWS/ApplicationELB
+      MetricName: TargetResponseTime
+      Dimensions:
+        - { Name: LoadBalancer, Value: !GetAtt LoadBalancer.LoadBalancerFullName }
+        - { Name: TargetGroup, Value: !GetAtt TargetGroup.TargetGroupFullName }
+      ExtendedStatistic: p95
+      Period: 60
+      EvaluationPeriods: 3
+      Threshold: 3
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
+  # ---------------------------------------------------------------- CloudWatch 알람: EC2 (메모리/디스크는 CloudWatch Agent 지표, InstanceId 로 집계)
+  Ec2StatusCheckAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectName}-${EnvName}-ec2-status-check"
+      AlarmDescription: EC2 상태 검사 실패
+      Namespace: AWS/EC2
+      MetricName: StatusCheckFailed
+      Dimensions:
+        - { Name: InstanceId, Value: !Ref AppInstance }
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
+  Ec2CpuAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectName}-${EnvName}-ec2-cpu-high"
+      AlarmDescription: EC2 CPU 가 5분 평균 80% 를 넘었다
+      Namespace: AWS/EC2
+      MetricName: CPUUtilization
+      Dimensions:
+        - { Name: InstanceId, Value: !Ref AppInstance }
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
+  Ec2MemoryAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectName}-${EnvName}-ec2-memory-high"
+      AlarmDescription: 메모리 사용률이 85% 를 넘었다 (컨테이너 OOM 선제 경고, CloudWatch Agent 지표)
+      Namespace: CWAgent
+      MetricName: mem_used_percent
+      Dimensions:
+        - { Name: InstanceId, Value: !Ref AppInstance }
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 3
+      Threshold: 85
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
+  Ec2DiskAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectName}-${EnvName}-ec2-disk-high"
+      AlarmDescription: 루트 디스크 사용률이 80% 를 넘었다 (Docker 이미지/로그, CloudWatch Agent 지표)
+      Namespace: CWAgent
+      MetricName: disk_used_percent
+      Dimensions:
+        - { Name: InstanceId, Value: !Ref AppInstance }
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
+  # ---------------------------------------------------------------- CloudWatch 알람: RDS x3 (CPU / 여유 스토리지 / 여유 메모리 / 연결 수)
+  UserDbCpuAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectName}-${EnvName}-user-db-cpu-high"
+      AlarmDescription: user-db CPU 가 10분 평균 80% 를 넘었다
+      Namespace: AWS/RDS
+      MetricName: CPUUtilization
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: { "Fn::ImportValue": !Sub "${Stack1Name}-UserDbIdentifier" }
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
+  UserDbStorageAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectName}-${EnvName}-user-db-storage-low"
+      AlarmDescription: user-db 여유 스토리지가 2GB 미만이다
+      Namespace: AWS/RDS
+      MetricName: FreeStorageSpace
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: { "Fn::ImportValue": !Sub "${Stack1Name}-UserDbIdentifier" }
+      Statistic: Minimum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 2147483648
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
+  UserDbMemoryAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectName}-${EnvName}-user-db-memory-low"
+      AlarmDescription: user-db 여유 메모리가 64MB 미만이다 (db.t4g.micro 는 1GB)
+      Namespace: AWS/RDS
+      MetricName: FreeableMemory
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: { "Fn::ImportValue": !Sub "${Stack1Name}-UserDbIdentifier" }
+      Statistic: Minimum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 67108864
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
+  UserDbConnectionsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectName}-${EnvName}-user-db-connections-high"
+      AlarmDescription: user-db 연결 수가 60 을 넘었다 (서비스당 풀 10 기준 이상 징후)
+      Namespace: AWS/RDS
+      MetricName: DatabaseConnections
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: { "Fn::ImportValue": !Sub "${Stack1Name}-UserDbIdentifier" }
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 60
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
+  MatchDbCpuAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectName}-${EnvName}-match-db-cpu-high"
+      AlarmDescription: match-db CPU 가 10분 평균 80% 를 넘었다
+      Namespace: AWS/RDS
+      MetricName: CPUUtilization
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: { "Fn::ImportValue": !Sub "${Stack1Name}-MatchDbIdentifier" }
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
+  MatchDbStorageAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectName}-${EnvName}-match-db-storage-low"
+      AlarmDescription: match-db 여유 스토리지가 2GB 미만이다
+      Namespace: AWS/RDS
+      MetricName: FreeStorageSpace
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: { "Fn::ImportValue": !Sub "${Stack1Name}-MatchDbIdentifier" }
+      Statistic: Minimum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 2147483648
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
+  MatchDbMemoryAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectName}-${EnvName}-match-db-memory-low"
+      AlarmDescription: match-db 여유 메모리가 64MB 미만이다 (db.t4g.micro 는 1GB)
+      Namespace: AWS/RDS
+      MetricName: FreeableMemory
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: { "Fn::ImportValue": !Sub "${Stack1Name}-MatchDbIdentifier" }
+      Statistic: Minimum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 67108864
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
+  MatchDbConnectionsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectName}-${EnvName}-match-db-connections-high"
+      AlarmDescription: match-db 연결 수가 60 을 넘었다 (서비스당 풀 10 기준 이상 징후)
+      Namespace: AWS/RDS
+      MetricName: DatabaseConnections
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: { "Fn::ImportValue": !Sub "${Stack1Name}-MatchDbIdentifier" }
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 60
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
+  FacilityDbCpuAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectName}-${EnvName}-facility-db-cpu-high"
+      AlarmDescription: facility-db CPU 가 10분 평균 80% 를 넘었다
+      Namespace: AWS/RDS
+      MetricName: CPUUtilization
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: { "Fn::ImportValue": !Sub "${Stack1Name}-FacilityDbIdentifier" }
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
+  FacilityDbStorageAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectName}-${EnvName}-facility-db-storage-low"
+      AlarmDescription: facility-db 여유 스토리지가 2GB 미만이다
+      Namespace: AWS/RDS
+      MetricName: FreeStorageSpace
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: { "Fn::ImportValue": !Sub "${Stack1Name}-FacilityDbIdentifier" }
+      Statistic: Minimum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 2147483648
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
+  FacilityDbMemoryAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectName}-${EnvName}-facility-db-memory-low"
+      AlarmDescription: facility-db 여유 메모리가 64MB 미만이다 (db.t4g.micro 는 1GB)
+      Namespace: AWS/RDS
+      MetricName: FreeableMemory
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: { "Fn::ImportValue": !Sub "${Stack1Name}-FacilityDbIdentifier" }
+      Statistic: Minimum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 67108864
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
+  FacilityDbConnectionsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectName}-${EnvName}-facility-db-connections-high"
+      AlarmDescription: facility-db 연결 수가 60 을 넘었다 (서비스당 풀 10 기준 이상 징후)
+      Namespace: AWS/RDS
+      MetricName: DatabaseConnections
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: { "Fn::ImportValue": !Sub "${Stack1Name}-FacilityDbIdentifier" }
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 60
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
+  # ---------------------------------------------------------------- 로그 ERROR 필터 (awslogs 로 올라온 서비스 로그에서 ERROR 개수를 센다)
+  ErrorFilterDiscoveryService:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Sub "/${ProjectName}/${EnvName}/discovery-service"
+      FilterPattern: ERROR
+      MetricTransformations:
+        - MetricNamespace: !Sub "${ProjectName}/Logs"
+          MetricName: ErrorCount-discovery-service
+          MetricValue: "1"
+          DefaultValue: 0
+
+  ErrorFilterConfigService:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Sub "/${ProjectName}/${EnvName}/config-service"
+      FilterPattern: ERROR
+      MetricTransformations:
+        - MetricNamespace: !Sub "${ProjectName}/Logs"
+          MetricName: ErrorCount-config-service
+          MetricValue: "1"
+          DefaultValue: 0
+
+  ErrorFilterGatewayService:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Sub "/${ProjectName}/${EnvName}/gateway-service"
+      FilterPattern: ERROR
+      MetricTransformations:
+        - MetricNamespace: !Sub "${ProjectName}/Logs"
+          MetricName: ErrorCount-gateway-service
+          MetricValue: "1"
+          DefaultValue: 0
+
+  ErrorFilterUserService:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Sub "/${ProjectName}/${EnvName}/user-service"
+      FilterPattern: ERROR
+      MetricTransformations:
+        - MetricNamespace: !Sub "${ProjectName}/Logs"
+          MetricName: ErrorCount-user-service
+          MetricValue: "1"
+          DefaultValue: 0
+
+  ErrorFilterMatchService:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Sub "/${ProjectName}/${EnvName}/match-service"
+      FilterPattern: ERROR
+      MetricTransformations:
+        - MetricNamespace: !Sub "${ProjectName}/Logs"
+          MetricName: ErrorCount-match-service
+          MetricValue: "1"
+          DefaultValue: 0
+
+  ErrorFilterFacilityService:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Sub "/${ProjectName}/${EnvName}/facility-service"
+      FilterPattern: ERROR
+      MetricTransformations:
+        - MetricNamespace: !Sub "${ProjectName}/Logs"
+          MetricName: ErrorCount-facility-service
+          MetricValue: "1"
+          DefaultValue: 0
+
+  ErrorFilterAiService:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Sub "/${ProjectName}/${EnvName}/ai-service"
+      FilterPattern: ERROR
+      MetricTransformations:
+        - MetricNamespace: !Sub "${ProjectName}/Logs"
+          MetricName: ErrorCount-ai-service
+          MetricValue: "1"
+          DefaultValue: 0
+
+  LogErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectName}-${EnvName}-log-errors"
+      AlarmDescription: 서비스 로그의 ERROR 가 5분에 20건을 넘었다 (7개 서비스 합산)
+      EvaluationPeriods: 1
+      Threshold: 20
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      Metrics:
+        - Id: errors
+          Label: ERROR logs (all services)
+          ReturnData: true
+          Expression: "m1+m2+m3+m4+m5+m6+m7"
+        - Id: m1
+          ReturnData: false
+          MetricStat:
+            Metric:
+              Namespace: !Sub "${ProjectName}/Logs"
+              MetricName: ErrorCount-discovery-service
+            Period: 300
+            Stat: Sum
+        - Id: m2
+          ReturnData: false
+          MetricStat:
+            Metric:
+              Namespace: !Sub "${ProjectName}/Logs"
+              MetricName: ErrorCount-config-service
+            Period: 300
+            Stat: Sum
+        - Id: m3
+          ReturnData: false
+          MetricStat:
+            Metric:
+              Namespace: !Sub "${ProjectName}/Logs"
+              MetricName: ErrorCount-gateway-service
+            Period: 300
+            Stat: Sum
+        - Id: m4
+          ReturnData: false
+          MetricStat:
+            Metric:
+              Namespace: !Sub "${ProjectName}/Logs"
+              MetricName: ErrorCount-user-service
+            Period: 300
+            Stat: Sum
+        - Id: m5
+          ReturnData: false
+          MetricStat:
+            Metric:
+              Namespace: !Sub "${ProjectName}/Logs"
+              MetricName: ErrorCount-match-service
+            Period: 300
+            Stat: Sum
+        - Id: m6
+          ReturnData: false
+          MetricStat:
+            Metric:
+              Namespace: !Sub "${ProjectName}/Logs"
+              MetricName: ErrorCount-facility-service
+            Period: 300
+            Stat: Sum
+        - Id: m7
+          ReturnData: false
+          MetricStat:
+            Metric:
+              Namespace: !Sub "${ProjectName}/Logs"
+              MetricName: ErrorCount-ai-service
+            Period: 300
+            Stat: Sum
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
+  # ---------------------------------------------------------------- 대시보드 (결과보고서/증빙 캡처용)
+  Dashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub "${ProjectName}-${EnvName}"
+      DashboardBody:
+        Fn::Sub:
+          - |
+            {
+              "widgets": [
+                { "type": "metric", "x": 0, "y": 0, "width": 12, "height": 6,
+                  "properties": { "title": "ALB 요청 / 5xx", "region": "${AWS::Region}", "stat": "Sum", "period": 60,
+                    "metrics": [
+                      [ "AWS/ApplicationELB", "RequestCount", "LoadBalancer", "${AlbName}" ],
+                      [ ".", "HTTPCode_Target_5XX_Count", ".", "." ],
+                      [ ".", "HTTPCode_ELB_5XX_Count", ".", "." ] ] } },
+                { "type": "metric", "x": 12, "y": 0, "width": 12, "height": 6,
+                  "properties": { "title": "ALB 응답 시간 p95 / 정상 호스트", "region": "${AWS::Region}", "period": 60,
+                    "metrics": [
+                      [ "AWS/ApplicationELB", "TargetResponseTime", "LoadBalancer", "${AlbName}", "TargetGroup", "${TgName}", { "stat": "p95" } ],
+                      [ ".", "HealthyHostCount", ".", ".", ".", ".", { "stat": "Minimum", "yAxis": "right" } ],
+                      [ ".", "UnHealthyHostCount", ".", ".", ".", ".", { "stat": "Maximum", "yAxis": "right" } ] ] } },
+                { "type": "metric", "x": 0, "y": 6, "width": 12, "height": 6,
+                  "properties": { "title": "EC2 CPU / 메모리 / 디스크 (%)", "region": "${AWS::Region}", "stat": "Average", "period": 60,
+                    "metrics": [
+                      [ "AWS/EC2", "CPUUtilization", "InstanceId", "${InstanceId}" ],
+                      [ "CWAgent", "mem_used_percent", "InstanceId", "${InstanceId}" ],
+                      [ ".", "disk_used_percent", ".", "." ] ] } },
+                { "type": "metric", "x": 12, "y": 6, "width": 12, "height": 6,
+                  "properties": { "title": "RDS CPU (%)", "region": "${AWS::Region}", "stat": "Average", "period": 300,
+                    "metrics": [
+                      [ "AWS/RDS", "CPUUtilization", "DBInstanceIdentifier", "${UserDbId}" ],
+                      [ "...", "${MatchDbId}" ],
+                      [ "...", "${FacilityDbId}" ] ] } },
+                { "type": "metric", "x": 0, "y": 12, "width": 12, "height": 6,
+                  "properties": { "title": "RDS 연결 수", "region": "${AWS::Region}", "stat": "Maximum", "period": 300,
+                    "metrics": [
+                      [ "AWS/RDS", "DatabaseConnections", "DBInstanceIdentifier", "${UserDbId}" ],
+                      [ "...", "${MatchDbId}" ],
+                      [ "...", "${FacilityDbId}" ] ] } },
+                { "type": "alarm", "x": 12, "y": 12, "width": 12, "height": 6,
+                  "properties": { "title": "알람 상태", "alarms": [
+                    "${AlbUnhealthyArn}", "${AlbTarget5xxArn}", "${AlbElb5xxArn}", "${AlbLatencyArn}",
+                    "${Ec2StatusArn}", "${Ec2CpuArn}", "${Ec2MemoryArn}", "${Ec2DiskArn}", "${LogErrorsArn}" ] } }
+              ]
+            }
+          - AlbName: !GetAtt LoadBalancer.LoadBalancerFullName
+            TgName: !GetAtt TargetGroup.TargetGroupFullName
+            InstanceId: !Ref AppInstance
+            UserDbId: { "Fn::ImportValue": !Sub "${Stack1Name}-UserDbIdentifier" }
+            MatchDbId: { "Fn::ImportValue": !Sub "${Stack1Name}-MatchDbIdentifier" }
+            FacilityDbId: { "Fn::ImportValue": !Sub "${Stack1Name}-FacilityDbIdentifier" }
+            AlbUnhealthyArn: !GetAtt AlbUnhealthyHostAlarm.Arn
+            AlbTarget5xxArn: !GetAtt AlbTarget5xxAlarm.Arn
+            AlbElb5xxArn: !GetAtt AlbElb5xxAlarm.Arn
+            AlbLatencyArn: !GetAtt AlbLatencyAlarm.Arn
+            Ec2StatusArn: !GetAtt Ec2StatusCheckAlarm.Arn
+            Ec2CpuArn: !GetAtt Ec2CpuAlarm.Arn
+            Ec2MemoryArn: !GetAtt Ec2MemoryAlarm.Arn
+            Ec2DiskArn: !GetAtt Ec2DiskAlarm.Arn
+            LogErrorsArn: !GetAtt LogErrorsAlarm.Arn
+
+Outputs:
+  AppUrl:
+    Description: 배포 주소 (HTTP). 인증서를 쓰면 https 로 접속
+    Value: !Sub "http://${LoadBalancer.DNSName}"
+  AlbDnsName:
+    Value: !GetAtt LoadBalancer.DNSName
+  InstanceId:
+    Description: SSM 세션 매니저로 접속할 인스턴스 (SSH 는 열려 있지 않음)
+    Value: !Ref AppInstance
+  AlarmTopicArn:
+    Value: !Ref AlarmTopic
+  DashboardName:
+    Value: !Sub "${ProjectName}-${EnvName}"
+  BootstrapLog:
+    Description: 인스턴스 안의 부트스트랩 로그 위치
+    Value: /var/log/sporty-userdata.log

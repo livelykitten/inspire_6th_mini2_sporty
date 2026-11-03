@@ -1,0 +1,741 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  Sporty 1단계 배포 stack1 - 네트워크(VPC/서브넷/NAT/SG), RDS MariaDB 3대, ECR 8개, Secrets Manager,
+  로그 그룹, GitHub OIDC 역할, 예산 알림. 11/4 아침에 가장 먼저 올린다 (RDS 생성에 10분 이상 걸림).
+  담당: 반정욱 (@salieri009) / 작업 위치: infra/aws/stack1-network-data.yaml / 런북: infra/aws/README.md
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label: { default: "기본" }
+        Parameters: [ProjectName, EnvName, LogRetentionDays]
+      - Label: { default: "RDS" }
+        Parameters: [DbEngineVersion, DbParameterFamily, DbInstanceClass, DbAllocatedStorage]
+      - Label: { default: "GitHub Actions -> ECR (OIDC)" }
+        Parameters: [CreateGithubOidcProvider, ExistingOidcProviderArn, GithubRepo, GithubExtraRef]
+      - Label: { default: "비용 알림 (선택)" }
+        Parameters: [BudgetEmail, MonthlyBudgetUsd]
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: sporty
+    AllowedPattern: "[a-z][a-z0-9-]{1,15}"
+    Description: 리소스 이름 접두어 (소문자/숫자/하이픈)
+  EnvName:
+    Type: String
+    Default: prod
+    AllowedPattern: "[a-z][a-z0-9-]{1,10}"
+    Description: 환경 이름. 스택을 지웠다 다시 만들 때 이름 충돌이 나면 prod2 처럼 바꾼다
+  LogRetentionDays:
+    Type: Number
+    Default: 7
+    AllowedValues: [1, 3, 5, 7, 14, 30]
+    Description: 컨테이너 로그 보존 일수 (비용 절감용으로 짧게)
+  DbEngineVersion:
+    Type: String
+    Default: "11.4"
+    Description: RDS MariaDB 엔진 버전. 리전에서 지원하지 않으면 10.11 등으로 바꾸고 DbParameterFamily 도 맞춘다
+  DbParameterFamily:
+    Type: String
+    Default: mariadb11.4
+    Description: DbEngineVersion 에 맞는 파라미터 그룹 패밀리 (예 mariadb10.11)
+  DbInstanceClass:
+    Type: String
+    Default: db.t4g.micro
+    AllowedValues: [db.t4g.micro, db.t4g.small, db.t4g.medium]
+  DbAllocatedStorage:
+    Type: Number
+    Default: 20
+    MinValue: 20
+    MaxValue: 100
+    Description: 인스턴스당 gp3 스토리지(GB)
+  CreateGithubOidcProvider:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: 계정에 GitHub OIDC 공급자가 이미 있으면 false (같은 URL 은 하나만 만들 수 있음)
+  ExistingOidcProviderArn:
+    Type: String
+    Default: ""
+    Description: CreateGithubOidcProvider=false 일 때 기존 공급자 ARN
+  GithubRepo:
+    Type: String
+    Default: livelykitten/inspire_6th_mini2_sporty
+    Description: ECR push 를 허용할 저장소 (owner/repo)
+  GithubExtraRef:
+    Type: String
+    Default: refs/heads/develop
+    Description: develop/main/태그 외에 push 를 허용할 ref (테스트용, 예 refs/heads/feat/infra-w35-aws-deploy)
+  BudgetEmail:
+    Type: String
+    Default: ""
+    Description: 월 예산 알림을 받을 이메일. 비우면 예산을 만들지 않는다
+  MonthlyBudgetUsd:
+    Type: Number
+    Default: 0
+    MinValue: 0
+    Description: 월 예산(USD). 0 이면 예산을 만들지 않는다
+
+Conditions:
+  CreateOidc: !Equals [!Ref CreateGithubOidcProvider, "true"]
+  CreateBudget: !And
+    - !Not [!Equals [!Ref BudgetEmail, ""]]
+    - !Not [!Equals [!Ref MonthlyBudgetUsd, 0]]
+
+Resources:
+  # ---------------------------------------------------------------- 네트워크
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - { Key: Name, Value: !Sub "${ProjectName}-${EnvName}-vpc" }
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - { Key: Name, Value: !Sub "${ProjectName}-${EnvName}-igw" }
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref Vpc
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.0.0.0/24
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      Tags:
+        - { Key: Name, Value: !Sub "${ProjectName}-${EnvName}-public-a" }
+
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      Tags:
+        - { Key: Name, Value: !Sub "${ProjectName}-${EnvName}-public-b" }
+
+  AppSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.0.10.0/24
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      Tags:
+        - { Key: Name, Value: !Sub "${ProjectName}-${EnvName}-app-a" }
+
+  AppSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.0.11.0/24
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      Tags:
+        - { Key: Name, Value: !Sub "${ProjectName}-${EnvName}-app-b" }
+
+  DataSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.0.20.0/24
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      Tags:
+        - { Key: Name, Value: !Sub "${ProjectName}-${EnvName}-data-a" }
+
+  DataSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.0.21.0/24
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      Tags:
+        - { Key: Name, Value: !Sub "${ProjectName}-${EnvName}-data-b" }
+
+  NatEip:
+    Type: AWS::EC2::EIP
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: vpc
+      Tags:
+        - { Key: Name, Value: !Sub "${ProjectName}-${EnvName}-nat-eip" }
+
+  # 비용 때문에 NAT 는 1개 (AZ a). 앱은 a 에만 둔다.
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatEip.AllocationId
+      SubnetId: !Ref PublicSubnetA
+      Tags:
+        - { Key: Name, Value: !Sub "${ProjectName}-${EnvName}-nat" }
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - { Key: Name, Value: !Sub "${ProjectName}-${EnvName}-public-rt" }
+
+  PublicDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetARouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetA
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnetBRouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetB
+      RouteTableId: !Ref PublicRouteTable
+
+  AppRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - { Key: Name, Value: !Sub "${ProjectName}-${EnvName}-app-rt" }
+
+  AppDefaultRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref AppRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+
+  AppSubnetARouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref AppSubnetA
+      RouteTableId: !Ref AppRouteTable
+
+  AppSubnetBRouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref AppSubnetB
+      RouteTableId: !Ref AppRouteTable
+
+  # 데이터 서브넷은 인터넷 경로가 없다 (VPC 로컬만).
+  DataRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - { Key: Name, Value: !Sub "${ProjectName}-${EnvName}-data-rt" }
+
+  DataSubnetARouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref DataSubnetA
+      RouteTableId: !Ref DataRouteTable
+
+  DataSubnetBRouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref DataSubnetB
+      RouteTableId: !Ref DataRouteTable
+
+  # ---------------------------------------------------------------- 보안 그룹
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: ALB - HTTP/HTTPS from the internet
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - { IpProtocol: tcp, FromPort: 80, ToPort: 80, CidrIp: 0.0.0.0/0, Description: HTTP }
+        - { IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0, Description: HTTPS when a certificate is used }
+      Tags:
+        - { Key: Name, Value: !Sub "${ProjectName}-${EnvName}-sg-alb" }
+
+  AppSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: App EC2 - port 80 from ALB only (no SSH, use SSM Session Manager)
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - { IpProtocol: tcp, FromPort: 80, ToPort: 80, SourceSecurityGroupId: !Ref AlbSecurityGroup, Description: ALB to nginx }
+      Tags:
+        - { Key: Name, Value: !Sub "${ProjectName}-${EnvName}-sg-app" }
+
+  DbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: RDS - port 3306 from the app EC2 only
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - { IpProtocol: tcp, FromPort: 3306, ToPort: 3306, SourceSecurityGroupId: !Ref AppSecurityGroup, Description: app to MariaDB }
+      Tags:
+        - { Key: Name, Value: !Sub "${ProjectName}-${EnvName}-sg-db" }
+
+  # ---------------------------------------------------------------- 비밀값 (값은 CFN 이 생성, 템플릿에는 없음)
+  DbPasswordUser:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: user-db 마스터 계정 (user_svc)
+      GenerateSecretString:
+        SecretStringTemplate: '{"username":"user_svc"}'
+        GenerateStringKey: password
+        PasswordLength: 24
+        ExcludeCharacters: '"@/\ ''`$&|;<>()'
+      Tags:
+        - { Key: Project, Value: !Ref ProjectName }
+
+  DbPasswordMatch:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: match-db 마스터 계정 (match_svc)
+      GenerateSecretString:
+        SecretStringTemplate: '{"username":"match_svc"}'
+        GenerateStringKey: password
+        PasswordLength: 24
+        ExcludeCharacters: '"@/\ ''`$&|;<>()'
+      Tags:
+        - { Key: Project, Value: !Ref ProjectName }
+
+  DbPasswordFacility:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: facility-db 마스터 계정 (facility_svc)
+      GenerateSecretString:
+        SecretStringTemplate: '{"username":"facility_svc"}'
+        GenerateStringKey: password
+        PasswordLength: 24
+        ExcludeCharacters: '"@/\ ''`$&|;<>()'
+      Tags:
+        - { Key: Project, Value: !Ref ProjectName }
+
+  JwtSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: JWT_SECRET_KEY (gateway 와 user-service 가 같은 값, 32바이트 이상)
+      GenerateSecretString:
+        SecretStringTemplate: "{}"
+        GenerateStringKey: password
+        PasswordLength: 64
+        ExcludePunctuation: true
+      Tags:
+        - { Key: Project, Value: !Ref ProjectName }
+
+  EncryptSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: ENCRYPT_KEY (Config 서버 설정 암호화)
+      GenerateSecretString:
+        SecretStringTemplate: "{}"
+        GenerateStringKey: password
+        PasswordLength: 40
+        ExcludePunctuation: true
+      Tags:
+        - { Key: Project, Value: !Ref ProjectName }
+
+  # 사용자가 배포 직후 콘솔에서 값을 직접 입력한다 (CHANGE_ME 를 바꾼다). 저장소에는 두지 않는다.
+  ExternalKeysSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: 외부 API 키 - OPEN_AI_KEY 와 PUBLIC_DATA_API_KEY 를 콘솔에서 입력
+      SecretString: '{"OPEN_AI_KEY":"CHANGE_ME","PUBLIC_DATA_API_KEY":"CHANGE_ME","PUBLIC_DATA_API_URL":""}'
+      Tags:
+        - { Key: Project, Value: !Ref ProjectName }
+
+  # ---------------------------------------------------------------- RDS (서비스당 1대)
+  DbSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Sporty RDS (private data subnets)
+      SubnetIds: [!Ref DataSubnetA, !Ref DataSubnetB]
+
+  DbParameterGroup:
+    Type: AWS::RDS::DBParameterGroup
+    Properties:
+      Description: Same charset as local compose.yaml (utf8mb4)
+      Family: !Ref DbParameterFamily
+      Parameters:
+        character_set_server: utf8mb4
+        collation_server: utf8mb4_unicode_ci
+
+  UserDb:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      DBInstanceIdentifier: !Sub "${ProjectName}-${EnvName}-user-db"
+      DBName: user_db
+      Engine: mariadb
+      EngineVersion: !Ref DbEngineVersion
+      DBInstanceClass: !Ref DbInstanceClass
+      AllocatedStorage: !Ref DbAllocatedStorage
+      StorageType: gp3
+      StorageEncrypted: true
+      MasterUsername: user_svc
+      MasterUserPassword: !Sub "{{resolve:secretsmanager:${DbPasswordUser}:SecretString:password}}"
+      DBSubnetGroupName: !Ref DbSubnetGroup
+      DBParameterGroupName: !Ref DbParameterGroup
+      VPCSecurityGroups: [!Ref DbSecurityGroup]
+      MultiAZ: false
+      PubliclyAccessible: false
+      BackupRetentionPeriod: 1
+      DeletionProtection: false
+      Tags:
+        - { Key: Name, Value: !Sub "${ProjectName}-${EnvName}-user-db" }
+
+  MatchDb:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      DBInstanceIdentifier: !Sub "${ProjectName}-${EnvName}-match-db"
+      DBName: match_db
+      Engine: mariadb
+      EngineVersion: !Ref DbEngineVersion
+      DBInstanceClass: !Ref DbInstanceClass
+      AllocatedStorage: !Ref DbAllocatedStorage
+      StorageType: gp3
+      StorageEncrypted: true
+      MasterUsername: match_svc
+      MasterUserPassword: !Sub "{{resolve:secretsmanager:${DbPasswordMatch}:SecretString:password}}"
+      DBSubnetGroupName: !Ref DbSubnetGroup
+      DBParameterGroupName: !Ref DbParameterGroup
+      VPCSecurityGroups: [!Ref DbSecurityGroup]
+      MultiAZ: false
+      PubliclyAccessible: false
+      BackupRetentionPeriod: 1
+      DeletionProtection: false
+      Tags:
+        - { Key: Name, Value: !Sub "${ProjectName}-${EnvName}-match-db" }
+
+  FacilityDb:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      DBInstanceIdentifier: !Sub "${ProjectName}-${EnvName}-facility-db"
+      DBName: facility_db
+      Engine: mariadb
+      EngineVersion: !Ref DbEngineVersion
+      DBInstanceClass: !Ref DbInstanceClass
+      AllocatedStorage: !Ref DbAllocatedStorage
+      StorageType: gp3
+      StorageEncrypted: true
+      MasterUsername: facility_svc
+      MasterUserPassword: !Sub "{{resolve:secretsmanager:${DbPasswordFacility}:SecretString:password}}"
+      DBSubnetGroupName: !Ref DbSubnetGroup
+      DBParameterGroupName: !Ref DbParameterGroup
+      VPCSecurityGroups: [!Ref DbSecurityGroup]
+      MultiAZ: false
+      PubliclyAccessible: false
+      BackupRetentionPeriod: 1
+      DeletionProtection: false
+      Tags:
+        - { Key: Name, Value: !Sub "${ProjectName}-${EnvName}-facility-db" }
+
+  # ---------------------------------------------------------------- ECR (서비스 7 + frontend)
+  EcrDiscovery:
+    Type: AWS::ECR::Repository
+    DeletionPolicy: Delete
+    Properties:
+      RepositoryName: !Sub "${ProjectName}/discovery-service"
+      EmptyOnDelete: true
+      ImageScanningConfiguration: { ScanOnPush: true }
+      LifecyclePolicy:
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"keep last 10","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":10},"action":{"type":"expire"}}]}'
+
+  EcrConfig:
+    Type: AWS::ECR::Repository
+    DeletionPolicy: Delete
+    Properties:
+      RepositoryName: !Sub "${ProjectName}/config-service"
+      EmptyOnDelete: true
+      ImageScanningConfiguration: { ScanOnPush: true }
+      LifecyclePolicy:
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"keep last 10","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":10},"action":{"type":"expire"}}]}'
+
+  EcrGateway:
+    Type: AWS::ECR::Repository
+    DeletionPolicy: Delete
+    Properties:
+      RepositoryName: !Sub "${ProjectName}/gateway-service"
+      EmptyOnDelete: true
+      ImageScanningConfiguration: { ScanOnPush: true }
+      LifecyclePolicy:
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"keep last 10","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":10},"action":{"type":"expire"}}]}'
+
+  EcrUser:
+    Type: AWS::ECR::Repository
+    DeletionPolicy: Delete
+    Properties:
+      RepositoryName: !Sub "${ProjectName}/user-service"
+      EmptyOnDelete: true
+      ImageScanningConfiguration: { ScanOnPush: true }
+      LifecyclePolicy:
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"keep last 10","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":10},"action":{"type":"expire"}}]}'
+
+  EcrMatch:
+    Type: AWS::ECR::Repository
+    DeletionPolicy: Delete
+    Properties:
+      RepositoryName: !Sub "${ProjectName}/match-service"
+      EmptyOnDelete: true
+      ImageScanningConfiguration: { ScanOnPush: true }
+      LifecyclePolicy:
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"keep last 10","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":10},"action":{"type":"expire"}}]}'
+
+  EcrFacility:
+    Type: AWS::ECR::Repository
+    DeletionPolicy: Delete
+    Properties:
+      RepositoryName: !Sub "${ProjectName}/facility-service"
+      EmptyOnDelete: true
+      ImageScanningConfiguration: { ScanOnPush: true }
+      LifecyclePolicy:
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"keep last 10","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":10},"action":{"type":"expire"}}]}'
+
+  EcrAi:
+    Type: AWS::ECR::Repository
+    DeletionPolicy: Delete
+    Properties:
+      RepositoryName: !Sub "${ProjectName}/ai-service"
+      EmptyOnDelete: true
+      ImageScanningConfiguration: { ScanOnPush: true }
+      LifecyclePolicy:
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"keep last 10","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":10},"action":{"type":"expire"}}]}'
+
+  EcrFrontend:
+    Type: AWS::ECR::Repository
+    DeletionPolicy: Delete
+    Properties:
+      RepositoryName: !Sub "${ProjectName}/frontend"
+      EmptyOnDelete: true
+      ImageScanningConfiguration: { ScanOnPush: true }
+      LifecyclePolicy:
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"keep last 10","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":10},"action":{"type":"expire"}}]}'
+
+  # ---------------------------------------------------------------- GitHub Actions -> ECR push (OIDC, 장기 키 없음)
+  GithubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: CreateOidc
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList: [sts.amazonaws.com]
+
+  GithubEcrPushRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Role for GitHub Actions to push images to ECR (trusts develop, main, tags and one extra ref only)
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !If [CreateOidc, !Ref GithubOidcProvider, !Ref ExistingOidcProviderArn]
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+              StringLike:
+                token.actions.githubusercontent.com:sub:
+                  - !Sub "repo:${GithubRepo}:ref:refs/heads/develop"
+                  - !Sub "repo:${GithubRepo}:ref:refs/heads/main"
+                  - !Sub "repo:${GithubRepo}:ref:refs/tags/*"
+                  - !Sub "repo:${GithubRepo}:ref:${GithubExtraRef}"
+      Policies:
+        - PolicyName: ecr-push
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:BatchGetImage
+                  - ecr:CompleteLayerUpload
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:InitiateLayerUpload
+                  - ecr:PutImage
+                  - ecr:UploadLayerPart
+                Resource:
+                  - !GetAtt EcrDiscovery.Arn
+                  - !GetAtt EcrConfig.Arn
+                  - !GetAtt EcrGateway.Arn
+                  - !GetAtt EcrUser.Arn
+                  - !GetAtt EcrMatch.Arn
+                  - !GetAtt EcrFacility.Arn
+                  - !GetAtt EcrAi.Arn
+                  - !GetAtt EcrFrontend.Arn
+
+  # ---------------------------------------------------------------- 컨테이너 로그 그룹 (compose.aws.yaml 의 awslogs 가 쓴다)
+  LogGroupDiscovery:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    Properties:
+      LogGroupName: !Sub "/${ProjectName}/${EnvName}/discovery-service"
+      RetentionInDays: !Ref LogRetentionDays
+
+  LogGroupConfig:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    Properties:
+      LogGroupName: !Sub "/${ProjectName}/${EnvName}/config-service"
+      RetentionInDays: !Ref LogRetentionDays
+
+  LogGroupGateway:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    Properties:
+      LogGroupName: !Sub "/${ProjectName}/${EnvName}/gateway-service"
+      RetentionInDays: !Ref LogRetentionDays
+
+  LogGroupUser:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    Properties:
+      LogGroupName: !Sub "/${ProjectName}/${EnvName}/user-service"
+      RetentionInDays: !Ref LogRetentionDays
+
+  LogGroupMatch:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    Properties:
+      LogGroupName: !Sub "/${ProjectName}/${EnvName}/match-service"
+      RetentionInDays: !Ref LogRetentionDays
+
+  LogGroupFacility:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    Properties:
+      LogGroupName: !Sub "/${ProjectName}/${EnvName}/facility-service"
+      RetentionInDays: !Ref LogRetentionDays
+
+  LogGroupAi:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    Properties:
+      LogGroupName: !Sub "/${ProjectName}/${EnvName}/ai-service"
+      RetentionInDays: !Ref LogRetentionDays
+
+  LogGroupFrontend:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    Properties:
+      LogGroupName: !Sub "/${ProjectName}/${EnvName}/frontend"
+      RetentionInDays: !Ref LogRetentionDays
+
+  # ---------------------------------------------------------------- 비용 알림 (선택, W-29 의 Budgets 항목)
+  MonthlyBudget:
+    Type: AWS::Budgets::Budget
+    Condition: CreateBudget
+    Properties:
+      Budget:
+        BudgetName: !Sub "${ProjectName}-${EnvName}-monthly"
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit:
+          Amount: !Ref MonthlyBudgetUsd
+          Unit: USD
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 80
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - { SubscriptionType: EMAIL, Address: !Ref BudgetEmail }
+        - Notification:
+            NotificationType: FORECASTED
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - { SubscriptionType: EMAIL, Address: !Ref BudgetEmail }
+
+Outputs:
+  VpcId:
+    Value: !Ref Vpc
+    Export: { Name: !Sub "${AWS::StackName}-VpcId" }
+  PublicSubnetAId:
+    Value: !Ref PublicSubnetA
+    Export: { Name: !Sub "${AWS::StackName}-PublicSubnetAId" }
+  PublicSubnetBId:
+    Value: !Ref PublicSubnetB
+    Export: { Name: !Sub "${AWS::StackName}-PublicSubnetBId" }
+  AppSubnetAId:
+    Value: !Ref AppSubnetA
+    Export: { Name: !Sub "${AWS::StackName}-AppSubnetAId" }
+  AlbSecurityGroupId:
+    Value: !Ref AlbSecurityGroup
+    Export: { Name: !Sub "${AWS::StackName}-AlbSecurityGroupId" }
+  AppSecurityGroupId:
+    Value: !Ref AppSecurityGroup
+    Export: { Name: !Sub "${AWS::StackName}-AppSecurityGroupId" }
+  UserDbEndpoint:
+    Value: !GetAtt UserDb.Endpoint.Address
+    Export: { Name: !Sub "${AWS::StackName}-UserDbEndpoint" }
+  MatchDbEndpoint:
+    Value: !GetAtt MatchDb.Endpoint.Address
+    Export: { Name: !Sub "${AWS::StackName}-MatchDbEndpoint" }
+  FacilityDbEndpoint:
+    Value: !GetAtt FacilityDb.Endpoint.Address
+    Export: { Name: !Sub "${AWS::StackName}-FacilityDbEndpoint" }
+  UserDbIdentifier:
+    Value: !Ref UserDb
+    Export: { Name: !Sub "${AWS::StackName}-UserDbIdentifier" }
+  MatchDbIdentifier:
+    Value: !Ref MatchDb
+    Export: { Name: !Sub "${AWS::StackName}-MatchDbIdentifier" }
+  FacilityDbIdentifier:
+    Value: !Ref FacilityDb
+    Export: { Name: !Sub "${AWS::StackName}-FacilityDbIdentifier" }
+  DbPasswordUserArn:
+    Value: !Ref DbPasswordUser
+    Export: { Name: !Sub "${AWS::StackName}-DbPasswordUserArn" }
+  DbPasswordMatchArn:
+    Value: !Ref DbPasswordMatch
+    Export: { Name: !Sub "${AWS::StackName}-DbPasswordMatchArn" }
+  DbPasswordFacilityArn:
+    Value: !Ref DbPasswordFacility
+    Export: { Name: !Sub "${AWS::StackName}-DbPasswordFacilityArn" }
+  JwtSecretArn:
+    Value: !Ref JwtSecret
+    Export: { Name: !Sub "${AWS::StackName}-JwtSecretArn" }
+  EncryptSecretArn:
+    Value: !Ref EncryptSecret
+    Export: { Name: !Sub "${AWS::StackName}-EncryptSecretArn" }
+  ExternalKeysSecretArn:
+    Description: 배포 직후 콘솔에서 OPEN_AI_KEY / PUBLIC_DATA_API_KEY 값을 입력할 시크릿
+    Value: !Ref ExternalKeysSecret
+    Export: { Name: !Sub "${AWS::StackName}-ExternalKeysSecretArn" }
+  EcrRegistry:
+    Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com"
+    Export: { Name: !Sub "${AWS::StackName}-EcrRegistry" }
+  EcrRepositoryPrefix:
+    Value: !Ref ProjectName
+    Export: { Name: !Sub "${AWS::StackName}-EcrRepositoryPrefix" }
+  GithubEcrPushRoleArn:
+    Description: GitHub 저장소 변수 AWS_ROLE_ARN 에 넣을 값
+    Value: !GetAtt GithubEcrPushRole.Arn
+    Export: { Name: !Sub "${AWS::StackName}-GithubEcrPushRoleArn" }
+  LogGroupPrefix:
+    Value: !Sub "/${ProjectName}/${EnvName}"
+    Export: { Name: !Sub "${AWS::StackName}-LogGroupPrefix" }
+  ProjectNameOut:
+    Value: !Ref ProjectName
+    Export: { Name: !Sub "${AWS::StackName}-ProjectName" }
+  EnvNameOut:
+    Value: !Ref EnvName
+    Export: { Name: !Sub "${AWS::StackName}-EnvName" }

@@ -1,0 +1,13 @@
+[
+  { "ParameterKey": "Stack1Name", "ParameterValue": "sporty-prod-data" },
+  { "ParameterKey": "ProjectName", "ParameterValue": "sporty" },
+  { "ParameterKey": "EnvName", "ParameterValue": "prod" },
+  { "ParameterKey": "InstanceType", "ParameterValue": "t3.xlarge" },
+  { "ParameterKey": "VolumeSizeGb", "ParameterValue": "30" },
+  { "ParameterKey": "GitRepoUrl", "ParameterValue": "https://github.com/livelykitten/inspire_6th_mini2_sporty.git" },
+  { "ParameterKey": "GitRef", "ParameterValue": "develop" },
+  { "ParameterKey": "DeployMode", "ParameterValue": "build" },
+  { "ParameterKey": "ImageTag", "ParameterValue": "latest" },
+  { "ParameterKey": "CertificateArn", "ParameterValue": "" },
+  { "ParameterKey": "AlarmEmail", "ParameterValue": "change-me@example.com" }
+]
