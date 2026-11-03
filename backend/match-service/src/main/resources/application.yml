@@ -48,7 +48,14 @@ logging:
     com.example.sporty.features.exerciseMatching.client.UserServiceClient: DEBUG
 
 resilience4j:
+  circuitbreaker:
+      configs:
+        default:
+          ignoreExceptions:
+            - 'feign.FeignException$NotFound'
+            - 'feign.FeignException$InternalServerError'
   timelimiter:
     configs:
       default:
         timeoutDuration: 4s
+
