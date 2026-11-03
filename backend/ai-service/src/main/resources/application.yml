@@ -9,8 +9,8 @@ spring:
       client:
         config:
           default:
-            connectTimeout: 1000
-            readTimeout: 2000
+            connectTimeout: 2000
+            readTimeout: 3000
   config:
     import:
       - "optional:file:./.env[.properties]"
