@@ -115,6 +115,9 @@ docker compose -f compose.yaml -f compose.app.yaml down
 - 접속: 프론트 `http://localhost` (nginx 가 `/api/` 를 gateway 로 프록시, 포트는 `FRONTEND_PORT` 로 변경), gateway `:8000`, Eureka `:8761`.
 - IDE 로 서비스를 띄우는 사람은 기존처럼 `compose.yaml` 만 쓴다. 앱 컨테이너와 IDE 서비스를 같이 띄우지 않는다 (포트 충돌).
 - user · ai 의 헬스체크는 `/actuator/health` 가 401 이라 임시로 TCP 포트 검사다 (#25, PR #24 머지 후 교체).
+- 첫 기동에서 일회성 컨테이너 `kafka-init`(토픽을 만들고 종료)이 `exited (0)` 로 끝나면 `up --wait` 가 exit 1 을 줄 수 있다. 오류가 아니다. `docker compose -f compose.yaml -f compose.app.yaml ps` 에서 나머지가 모두 `healthy` 인지 본다.
+- 기동 직후 약 30~60초는 게이트웨이가 503 을 줄 수 있다 (Eureka 레지스트리 캐시). 시연 · smoke 전에 잠깐 기다린다.
+- `config-repo/` 는 `config-service` 이미지에 포함되므로 파일을 고쳤다면 `... up -d --build config-service` 로 다시 만든다.
 
 ## 서비스 코드 배치 (구조만 나눈 상태)
 
