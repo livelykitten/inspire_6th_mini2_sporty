@@ -1,10 +1,10 @@
-# facility-service 설정 (W-24). 비밀값은 ${환경변수} 로만 두고 값은 각자 .env (로컬) 에 있다
+# facility-service 설정 (W-24). DB 비밀번호 · JWT 키는 '{cipher}...' (W-25, README.md)
 spring:
   datasource:
     driver-class-name: ${DB_DRIVER:org.mariadb.jdbc.Driver}
     url: ${DB_URL:jdbc:mariadb://localhost:3308/facility_db}
     username: ${DB_USERNAME:facility_svc}
-    password: ${DB_PASSWORD:facility_svc}
+    password: '{cipher}5b160fb40a97ef44b7b3b0b120644ddd09ea3b20c76cea5a1b9990c4085e4405'
   jpa:
     hibernate:
       ddl-auto: create-drop
