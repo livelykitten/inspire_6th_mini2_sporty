@@ -46,6 +46,9 @@ import com.example.sporty.support.FacilityFixtures;
 @WebMvcTest(MatchController.class)
 @Import({MatchService.class, SecurityConfig.class})
 class MatchDetailControllerTest {
+    @MockitoBean com.example.sporty.features.exerciseMatching.withdrawal.MatchUserGuardService userGuards;
+    @MockitoBean org.springframework.transaction.PlatformTransactionManager transactionManager;
+
 
     @Autowired
     private MockMvc mvc;

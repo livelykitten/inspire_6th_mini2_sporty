@@ -58,10 +58,12 @@ import com.example.sporty.features.exerciseMatching.repository.MatchRepository;
         "test.context-id=match-join"
 })
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.ANY)
-@Import(MatchService.class)
+@Import({MatchService.class, com.example.sporty.features.exerciseMatching.withdrawal.MatchUserGuardService.class})
 // 각 서비스 호출이 실제로 커밋/롤백된 뒤 별도 트랜잭션에서 결과를 확인한다.
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class MatchJoinIntegrationTest {
+    @org.springframework.test.context.bean.override.mockito.MockitoSpyBean
+    com.example.sporty.features.exerciseMatching.withdrawal.MatchUserGuardService userGuards;
 
     @Autowired
     private MatchService matchService;
@@ -201,12 +203,23 @@ class MatchJoinIntegrationTest {
     void transactionFailureRollsBackParticipationAndClosure() {
         Long matchId = createMatch(2, MatchStatus.RECRUITING, LocalDateTime.now().plusDays(1));
 
-        assertThatThrownBy(() -> new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
-            matchService.joinMatch(matchId, userId(2L));
-            matchRepository.flush();
-            assertState(matchId, 2, MatchStatus.CLOSED);
-            throw new IllegalStateException("test-only transaction failure");
-        })).isInstanceOf(IllegalStateException.class).hasMessage("test-only transaction failure");
+        // The facade now suspends caller transactions before Feign. Inject the failure
+        // into the real write transaction, after both SQL changes have been flushed.
+        new TransactionTemplate(transactionManager).executeWithoutResult(stubbing -> org.mockito.Mockito.doAnswer(invocation -> {
+            invocation.callRealMethod();
+            org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                    new org.springframework.transaction.support.TransactionSynchronization() {
+                        @Override
+                        public void beforeCommit(boolean readOnly) {
+                            matchRepository.flush();
+                            assertState(matchId, 2, MatchStatus.CLOSED);
+                            throw new IllegalStateException("test-only transaction failure");
+                        }
+                    });
+            return null;
+        }).when(userGuards).requireUnblocked(userId(2L)));
+        assertThatThrownBy(() -> matchService.joinMatch(matchId, userId(2L)))
+                .isInstanceOf(IllegalStateException.class).hasMessage("test-only transaction failure");
 
         assertState(matchId, 1, MatchStatus.RECRUITING);
         assertThat(matchParticipantRepository.existsByMatch_IdAndUserId(matchId, userId(2L))).isFalse();
