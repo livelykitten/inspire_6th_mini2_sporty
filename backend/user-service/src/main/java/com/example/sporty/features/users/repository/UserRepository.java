@@ -31,9 +31,29 @@ public interface UserRepository extends JpaRepository<UserEntity, Long> {
             @Param("pendingStatus") UserStatus pendingStatus
     );
 
-    @Query(value = "SELECT * FROM `user` WHERE id = :userId FOR UPDATE",
-            nativeQuery = true)
+    @Query(
+            value = "SELECT * FROM `user` WHERE id = :userId FOR UPDATE",
+            nativeQuery = true
+    )
     Optional<UserEntity> findCurrentByIdForUpdate(
             @Param("userId") Long userId
+    );
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            update UserEntity u
+            set u.status = :withdrawnStatus,
+                u.withdrawalSagaId = null,
+                u.withdrawnAt = CURRENT_TIMESTAMP,
+                u.updatedAt = CURRENT_TIMESTAMP
+            where u.id = :userId
+              and u.status = :pendingStatus
+              and u.withdrawalSagaId = :sagaId
+            """)
+    int completeWithdrawal(
+            @Param("userId") Long userId,
+            @Param("sagaId") String sagaId,
+            @Param("pendingStatus") UserStatus pendingStatus,
+            @Param("withdrawnStatus") UserStatus withdrawnStatus
     );
 }

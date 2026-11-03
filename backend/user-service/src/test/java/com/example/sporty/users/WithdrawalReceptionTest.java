@@ -1,11 +1,20 @@
 package com.example.sporty.users;
 
-import com.example.sporty.features.commons.exception.users.*;
-import com.example.sporty.features.users.domain.entity.*;
-import com.example.sporty.features.users.repository.*;
+import com.example.sporty.features.commons.exception.users.UserAlreadyWithdrawnException;
+import com.example.sporty.features.commons.exception.users.WithdrawalAlreadyPendingException;
+import com.example.sporty.features.users.domain.dto.WithdrawalCompletedEvent;
+import com.example.sporty.features.users.domain.entity.Gender;
+import com.example.sporty.features.users.domain.entity.UserEntity;
+import com.example.sporty.features.users.domain.entity.UserOutbox;
+import com.example.sporty.features.users.domain.entity.UserStatus;
+import com.example.sporty.features.users.repository.UserOutboxRepository;
+import com.example.sporty.features.users.repository.UserRepository;
 import com.example.sporty.features.users.service.UserService;
+import com.example.sporty.features.users.service.WithdrawalCompletionService;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
@@ -39,7 +48,11 @@ import static org.mockito.Mockito.*;
 @AutoConfigureTestDatabase(
         replace = AutoConfigureTestDatabase.Replace.NONE
 )
-@Import({UserService.class, WithdrawalReceptionTest.TestBeans.class})
+@Import({
+        UserService.class,
+        WithdrawalCompletionService.class,
+        WithdrawalReceptionTest.TestBeans.class
+})
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class WithdrawalReceptionTest {
 
@@ -57,6 +70,9 @@ class WithdrawalReceptionTest {
 
     @Autowired
     ObjectMapper objectMapper;
+
+    @Autowired
+    WithdrawalCompletionService completionService;
 
     @TestConfiguration
     static class TestBeans {
@@ -91,6 +107,7 @@ class WithdrawalReceptionTest {
         userService.withdrawal("Test1234!");
 
         var user = userRepository.findById(userId).orElseThrow();
+
         assertThat(user.getStatus())
                 .isEqualTo(UserStatus.WITHDRAWAL_PENDING);
         assertThat(user.getWithdrawalSagaId()).isNotBlank();
@@ -100,17 +117,21 @@ class WithdrawalReceptionTest {
         assertThat(events).hasSize(1);
 
         var outbox = events.get(0);
+
         assertThat(outbox.getStatus()).isEqualTo("PENDING");
         assertThat(outbox.getTopic())
                 .isEqualTo("user.withdrawal.requested");
-        assertThat(outbox.getMessageKey()).isEqualTo(userId.toString());
+        assertThat(outbox.getMessageKey())
+                .isEqualTo(userId.toString());
 
         var payload = objectMapper.readTree(outbox.getPayload());
+
         assertThat(payload.get("eventId").asText())
                 .isEqualTo(outbox.getEventId());
         assertThat(payload.get("sagaId").asText())
                 .isEqualTo(user.getWithdrawalSagaId());
-        assertThat(payload.get("userId").asLong()).isEqualTo(userId);
+        assertThat(payload.get("userId").asLong())
+                .isEqualTo(userId);
     }
 
     @Test
@@ -120,14 +141,17 @@ class WithdrawalReceptionTest {
         userService.withdrawal("Test1234!");
 
         String sagaId = userRepository.findById(userId)
-                .orElseThrow().getWithdrawalSagaId();
+                .orElseThrow()
+                .getWithdrawalSagaId();
 
         assertThatThrownBy(() -> userService.withdrawal("Test1234!"))
                 .isInstanceOf(WithdrawalAlreadyPendingException.class);
 
         assertThat(outboxRepository.count()).isEqualTo(1);
         assertThat(userRepository.findById(userId)
-                .orElseThrow().getWithdrawalSagaId()).isEqualTo(sagaId);
+                .orElseThrow()
+                .getWithdrawalSagaId())
+                .isEqualTo(sagaId);
     }
 
     @Test
@@ -147,16 +171,109 @@ class WithdrawalReceptionTest {
         authenticate(userId);
 
         doThrow(new IllegalStateException("테스트용 저장 실패"))
-                .when(outboxRepository).save(any(UserOutbox.class));
+                .when(outboxRepository)
+                .save(any(UserOutbox.class));
 
         assertThatThrownBy(() -> userService.withdrawal("Test1234!"))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("테스트용 저장 실패");
 
         var user = userRepository.findById(userId).orElseThrow();
+
         assertThat(user.getStatus()).isEqualTo(UserStatus.ACTIVE);
         assertThat(user.getWithdrawalSagaId()).isNull();
         assertThat(outboxRepository.count()).isZero();
+    }
+
+    @Test
+    void matchingCompletionConfirmsWithdrawal() {
+        Long userId = createUser(UserStatus.ACTIVE);
+        authenticate(userId);
+        userService.withdrawal("Test1234!");
+
+        String sagaId = userRepository.findById(userId)
+                .orElseThrow()
+                .getWithdrawalSagaId();
+
+        var event = new WithdrawalCompletedEvent(
+                UUID.randomUUID().toString(),
+                "2026-11-03T17:20:00",
+                sagaId,
+                userId,
+                List.of(),
+                List.of()
+        );
+
+        assertThat(completionService.complete(event)).isTrue();
+
+        var user = userRepository.findById(userId).orElseThrow();
+
+        assertThat(user.getStatus()).isEqualTo(UserStatus.WITHDRAWN);
+        assertThat(user.getWithdrawalSagaId()).isNull();
+        assertThat(user.getWithdrawnAt()).isNotNull();
+    }
+
+    @Test
+    void oldSagaCompletionDoesNotChangeCurrentRequest() {
+        Long userId = createUser(UserStatus.ACTIVE);
+        authenticate(userId);
+        userService.withdrawal("Test1234!");
+
+        String currentSagaId = userRepository.findById(userId)
+                .orElseThrow()
+                .getWithdrawalSagaId();
+
+        var event = new WithdrawalCompletedEvent(
+                UUID.randomUUID().toString(),
+                "2026-11-03T17:20:00",
+                UUID.randomUUID().toString(),
+                userId,
+                List.of(),
+                List.of()
+        );
+
+        assertThat(completionService.complete(event)).isFalse();
+
+        var user = userRepository.findById(userId).orElseThrow();
+
+        assertThat(user.getStatus())
+                .isEqualTo(UserStatus.WITHDRAWAL_PENDING);
+        assertThat(user.getWithdrawalSagaId()).isEqualTo(currentSagaId);
+        assertThat(user.getWithdrawnAt()).isNull();
+    }
+
+    @Test
+    void duplicateCompletionDoesNotChangeWithdrawalTime() {
+        Long userId = createUser(UserStatus.ACTIVE);
+        authenticate(userId);
+        userService.withdrawal("Test1234!");
+
+        String sagaId = userRepository.findById(userId)
+                .orElseThrow()
+                .getWithdrawalSagaId();
+
+        var event = new WithdrawalCompletedEvent(
+                UUID.randomUUID().toString(),
+                "2026-11-03T17:20:00",
+                sagaId,
+                userId,
+                List.of(),
+                List.of()
+        );
+
+        assertThat(completionService.complete(event)).isTrue();
+
+        var firstWithdrawalTime = userRepository.findById(userId)
+                .orElseThrow()
+                .getWithdrawnAt();
+
+        assertThat(completionService.complete(event)).isFalse();
+
+        var user = userRepository.findById(userId).orElseThrow();
+
+        assertThat(user.getStatus()).isEqualTo(UserStatus.WITHDRAWN);
+        assertThat(user.getWithdrawalSagaId()).isNull();
+        assertThat(user.getWithdrawnAt()).isEqualTo(firstWithdrawalTime);
     }
 
     private Long createUser(UserStatus status) {
@@ -173,7 +290,9 @@ class WithdrawalReceptionTest {
     private void authenticate(Long userId) {
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(
-                        userId, null, List.of()
+                        userId,
+                        null,
+                        List.of()
                 )
         );
     }

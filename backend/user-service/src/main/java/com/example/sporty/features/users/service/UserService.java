@@ -95,6 +95,10 @@ public class UserService {
         UserEntity userEntity = userRepository.findById(userId)
                 .orElseThrow(UserNotFoundException::new);
 
+        if (userEntity.getStatus() == UserStatus.WITHDRAWN) {
+            throw new UserAlreadyWithdrawnException();
+        }
+
         // 2. profile 테이블에서 프로필 정보 조회
         ProfileEntity profileEntity = profileRepository.findByUserId(userId)
                 .orElseThrow(ProfileNotFoundException::new);
