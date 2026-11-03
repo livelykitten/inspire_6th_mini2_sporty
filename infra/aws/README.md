@@ -42,9 +42,13 @@ Secrets Manager 에서 설명이 "외부 API 키" 인 시크릿 → **값 보기
 
 ### 4. stack2
 1. 같은 방식으로 `stack2-app.yaml` 업로드, 스택 이름 `sporty-prod-app`.
-2. `Stack1Name` = `sporty-prod-data`, `AlarmEmail` = 알람 받을 주소, `GitRef`/`DeployMode`/`ImageTag` 설정.
+2. `Stack1Name` = `sporty-prod-data`, `GitRef`/`DeployMode`/`ImageTag` 설정. 알람 수신은 이메일(`AlarmEmail`, 선택)과 Discord(`DiscordNotify`, 기본 true) 중 원하는 것을 쓴다.
 3. **IAM 리소스 생성 체크.** 완료되면 출력의 `AppUrl` 이 배포 주소다.
-4. **알람 이메일 구독 확인 메일**(발신: AWS Notifications)의 링크를 누른다. 누르기 전까지 알람이 오지 않는다.
+4. **이메일을 넣었다면** 구독 확인 메일(발신: AWS Notifications)의 링크를 누른다. 누르기 전까지 이메일 알람이 오지 않는다.
+5. **Discord 로 받으려면** (웹훅 URL 은 비밀값이라 템플릿에 넣지 않는다):
+   1. Discord 채널 설정 → 연동 → 웹후크 → 새 웹후크 → URL 복사.
+   2. 스택 출력 `DiscordWebhookSecretArn` 의 시크릿 값을 `{"webhook_url":"<복사한 URL>"}` 로 바꾼다 (Secrets Manager 콘솔 → 값 편집, 또는 `aws secretsmanager put-secret-value --secret-id <ARN> --secret-string '{"webhook_url":"<URL>"}'`).
+   3. 시험: `aws sns publish --topic-arn <AlarmTopicArn> --message '{"AlarmName":"test","NewStateValue":"ALARM","NewStateReason":"manual test","Region":"Seoul"}'` → 채널에 메시지가 오면 된다. 값이 `CHANGE_ME` 인 동안 Lambda 는 전송하지 않고 로그만 남긴다.
 
 ### 5. 부트스트랩 확인
 EC2 콘솔 → 인스턴스 선택 → **연결 → Session Manager** (SSH 는 열려 있지 않다).
@@ -93,7 +97,8 @@ sudo docker stop sporty-frontend-1        # 컨테이너 이름은 docker ps 로
 | 이름 | 기본값 | 설명 |
 |---|---|---|
 | `Stack1Name` | (필수) | stack1 스택 이름 |
-| `AlarmEmail` | (필수) | 알람 수신 이메일 |
+| `AlarmEmail` | 빈 값 | 알람 이메일(선택). 비우면 이메일 구독을 만들지 않는다 |
+| `DiscordNotify` | `true` | 알람을 Discord 로도 보낸다 (SNS → Lambda → 웹훅). 웹훅 URL 은 생성 뒤 시크릿에 입력 |
 | `InstanceType` / `VolumeSizeGb` | `t3.xlarge` / 30 | 메모리 알람이 울리면 한 단계 올린다 |
 | `GitRepoUrl` / `GitRef` | 저장소 / `develop` | EC2 가 clone 할 대상 |
 | `DeployMode` / `ImageTag` | `build` / `latest` | `ecr` 이면 ECR 이미지를 pull |

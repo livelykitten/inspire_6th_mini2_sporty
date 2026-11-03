@@ -14,7 +14,7 @@ Metadata:
       - Label: { default: "배포 방식" }
         Parameters: [GitRepoUrl, GitRef, DeployMode, ImageTag]
       - Label: { default: "ALB / 알람" }
-        Parameters: [CertificateArn, AlarmEmail]
+        Parameters: [CertificateArn, AlarmEmail, DiscordNotify]
 
 Parameters:
   Stack1Name:
@@ -64,10 +64,18 @@ Parameters:
     Description: ACM 인증서 ARN. 비우면 HTTP 80 만 열고, 있으면 443 + 80 -> 443 리다이렉트
   AlarmEmail:
     Type: String
-    AllowedPattern: "[^@ ]+@[^@ ]+"
-    Description: 알람 이메일. 스택 생성 후 AWS 가 보내는 확인 메일을 눌러야 알람이 온다
+    Default: ""
+    AllowedPattern: "(^$)|([^@ ]+@[^@ ]+)"
+    Description: 알람 이메일(선택). 비우면 이메일 구독을 만들지 않는다. 넣으면 스택 생성 후 AWS 확인 메일을 눌러야 알람이 온다
+  DiscordNotify:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: 알람을 Discord 로도 보낸다 (SNS -> Lambda -> 웹훅). 웹훅 URL 은 스택 생성 뒤 시크릿에 직접 넣는다 (infra/aws/README.md)
 
 Conditions:
+  HasAlarmEmail: !Not [!Equals [!Ref AlarmEmail, ""]]
+  UseDiscord: !Equals [!Ref DiscordNotify, "true"]
   HasCertificate: !Not [!Equals [!Ref CertificateArn, ""]]
   NoCertificate: !Equals [!Ref CertificateArn, ""]
 
@@ -256,8 +264,113 @@ Resources:
     Type: AWS::SNS::Topic
     Properties:
       TopicName: !Sub "${ProjectName}-${EnvName}-alarms"
-      Subscription:
-        - { Protocol: email, Endpoint: !Ref AlarmEmail }
+      Subscription: !If
+        - HasAlarmEmail
+        - - { Protocol: email, Endpoint: !Ref AlarmEmail }
+        - !Ref AWS::NoValue
+
+  # ---------------------------------------------------------------- Discord 알림 (SNS -> Lambda -> Discord 웹훅)
+  # 웹훅 URL 은 비밀값이라 템플릿/파라미터에 넣지 않는다. 스택 생성 뒤 이 시크릿의 webhook_url 을 직접 바꾼다.
+  DiscordWebhookSecret:
+    Type: AWS::SecretsManager::Secret
+    Condition: UseDiscord
+    Properties:
+      Description: Discord 웹훅 URL - webhook_url 값을 콘솔 또는 CLI 로 입력 (CHANGE_ME 인 동안은 전송하지 않음)
+      SecretString: '{"webhook_url":"CHANGE_ME"}'
+
+  DiscordNotifierRole:
+    Type: AWS::IAM::Role
+    Condition: UseDiscord
+    Properties:
+      Description: Lambda that forwards CloudWatch alarms from SNS to Discord
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: read-webhook-secret
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref DiscordWebhookSecret
+
+  DiscordNotifierFunction:
+    Type: AWS::Lambda::Function
+    Condition: UseDiscord
+    Properties:
+      FunctionName: !Sub "${ProjectName}-${EnvName}-discord-notifier"
+      Runtime: python3.12
+      Handler: index.handler
+      Timeout: 10
+      MemorySize: 128
+      Role: !GetAtt DiscordNotifierRole.Arn
+      Environment:
+        Variables:
+          SECRET_ID: !Ref DiscordWebhookSecret
+      Code:
+        ZipFile: |
+          import json
+          import os
+          import urllib.request
+
+          import boto3
+
+          sm = boto3.client("secretsmanager")
+
+
+          def webhook_url():
+              raw = sm.get_secret_value(SecretId=os.environ["SECRET_ID"])["SecretString"]
+              return json.loads(raw).get("webhook_url", "")
+
+
+          def build_text(sns):
+              msg = sns.get("Message", "")
+              try:
+                  a = json.loads(msg)
+              except ValueError:
+                  return "[ALARM] " + sns.get("Subject", "notification") + "\n" + msg[:1500]
+              state = a.get("NewStateValue", "")
+              icon = {"ALARM": "[ALARM]", "OK": "[OK]"}.get(state, "[" + state + "]")
+              return "%s **%s**\n%s\n(%s)" % (icon, a.get("AlarmName", "alarm"), a.get("NewStateReason", "")[:1200], a.get("Region", ""))
+
+
+          def handler(event, context):
+              url = webhook_url()
+              if not url.startswith("https://discord"):
+                  print("discord webhook is not configured; skipping")
+                  return {"skipped": True}
+              sent = 0
+              for rec in event.get("Records", []):
+                  body = json.dumps({"content": build_text(rec["Sns"])[:1900]}).encode("utf-8")
+                  req = urllib.request.Request(
+                      url, data=body,
+                      headers={"Content-Type": "application/json", "User-Agent": "sporty-alarm/1.0"})
+                  urllib.request.urlopen(req, timeout=5)
+                  sent += 1
+              return {"sent": sent}
+
+  DiscordNotifierPermission:
+    Type: AWS::Lambda::Permission
+    Condition: UseDiscord
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref DiscordNotifierFunction
+      Principal: sns.amazonaws.com
+      SourceArn: !Ref AlarmTopic
+
+  DiscordNotifierSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: UseDiscord
+    Properties:
+      TopicArn: !Ref AlarmTopic
+      Protocol: lambda
+      Endpoint: !GetAtt DiscordNotifierFunction.Arn
 
   # ---------------------------------------------------------------- CloudWatch 알람: ALB
   AlbUnhealthyHostAlarm:
@@ -861,6 +974,10 @@ Outputs:
     Value: !Ref AppInstance
   AlarmTopicArn:
     Value: !Ref AlarmTopic
+  DiscordWebhookSecretArn:
+    Condition: UseDiscord
+    Description: Discord 웹훅 URL 을 넣을 시크릿 (put-secret-value 로 webhook_url 을 바꾼다)
+    Value: !Ref DiscordWebhookSecret
   DashboardName:
     Value: !Sub "${ProjectName}-${EnvName}"
   BootstrapLog:
