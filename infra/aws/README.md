@@ -51,7 +51,8 @@ EC2 콘솔 → 인스턴스 선택 → **연결 → Session Manager** (SSH 는 �
 
 ```bash
 sudo tail -f /var/log/sporty-userdata.log      # 설치 · clone · 배포 진행
-sudo docker compose -f /opt/sporty/compose.yaml -f /opt/sporty/compose.app.yaml -f /opt/sporty/compose.aws.yaml ps
+sudo bash /opt/sporty/deploy/ec2/deploy.sh status               # 컨테이너 상태 (전부 healthy 여야 함)
+sudo bash /opt/sporty/deploy/ec2/deploy.sh logs gateway-service # 서비스 로그 (CloudWatch 에도 올라간다)
 ```
 
 로그 마지막에 `smoke OK` 가 나오면 끝이다. 시크릿을 고쳤거나 코드를 갱신했으면 같은 서버에서 `sudo bash /opt/sporty/deploy/ec2/deploy.sh` 를 다시 실행한다 (멱등).
@@ -128,6 +129,8 @@ EC2 t3.xlarge · NAT Gateway · ALB · RDS db.t4g.micro ×3 · 로그 · 시크�
 | stack1 RDS 엔진 버전 오류 | `DbEngineVersion` / `DbParameterFamily` 를 `10.11` / `mariadb10.11` 로 |
 | stack2 `No export named ...` | `Stack1Name` 오타이거나 stack1 이 아직 `CREATE_COMPLETE` 가 아니다 |
 | 스택은 성공했는데 ALB 가 503 / 대상 unhealthy | 부트스트랩이 아직 도는 중이다. `/var/log/sporty-userdata.log` 확인. nginx(`/healthz`)가 뜨기 전까지 정상 |
-| 앱은 뜨는데 `/api/*` 가 404 | 게이트웨이가 Config 서버에서 라우트를 못 받은 상태. `docker compose ... ps` 로 config-service 확인 후 `deploy.sh` 재실행 |
+| 앱은 뜨는데 `/api/*` 가 404 | 게이트웨이가 Config 서버에서 라우트를 못 받은 상태. `deploy.sh status` 로 config-service 확인 후 `deploy.sh` 재실행 |
+| 컨테이너가 로그 드라이버 오류로 안 뜬다 | awslogs 문제일 때 `/etc/sporty/aws.env` 에 `USE_AWSLOGS=false` 를 넣고 `deploy.sh` 재실행 (로컬 로그만 사용, CloudWatch 로그 · ERROR 알람은 동작하지 않음) |
+| 인증서(HTTPS)를 쓰는데 브라우저 POST 가 403 | 게이트웨이 CORS 오리진이 `https://도메인` 과 달라서다. `/etc/sporty/aws.env` 에 `CORS_ALLOWED_ORIGIN=https://도메인` 을 넣고 `deploy.sh` 재실행 |
 | 부트스트랩이 `git clone` 에서 실패 | `GitRef` 브랜치/태그가 원격에 없다. 스택 업데이트로 `GitRef` 수정 후 인스턴스 교체 또는 Session Manager 에서 수동 실행 |
 | 알람 이메일이 안 온다 | 구독 확인 메일을 아직 누르지 않았다 (스팸함 확인) |
