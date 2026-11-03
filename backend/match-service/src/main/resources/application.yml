@@ -19,6 +19,16 @@ spring:
       ddl-auto: update
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+  cloud:
+    openfeign:
+      circuitbreaker:
+        enabled: true
+      client:
+        config:
+          user-service:
+            loggerLevel: BASIC
+            connect-timeout: 1000
+            read-timeout: 2000
 
 eureka:
   client:
@@ -31,3 +41,21 @@ management:
     web:
       exposure:
         include: health,info
+
+
+logging:
+  level:
+    com.example.sporty.features.exerciseMatching.client.UserServiceClient: DEBUG
+
+resilience4j:
+  circuitbreaker:
+      configs:
+        default:
+          ignoreExceptions:
+            - 'feign.FeignException$NotFound'
+            - 'feign.FeignException$InternalServerError'
+  timelimiter:
+    configs:
+      default:
+        timeoutDuration: 4s
+

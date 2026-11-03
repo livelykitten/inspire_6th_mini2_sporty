@@ -3,6 +3,7 @@ package com.example.sporty.features.commons.handler;
 import com.example.sporty.features.commons.exception.matches.MatchUserNotFoundException;
 import com.example.sporty.features.commons.exception.matches.WithdrawnUserFoundException;
 import com.example.sporty.features.commons.exception.matches.ServiceNotFoundException;
+import com.example.sporty.features.commons.exception.matches.UserServiceUnavailableException;
 import com.example.sporty.features.commons.exception.auth.LoginFailException;
 import com.example.sporty.features.commons.exception.auth.InvalidRefreshTokenException;
 import com.example.sporty.features.commons.exception.exerciseMatching.MatchDeleteForbiddenException;
@@ -19,6 +20,11 @@ import com.example.sporty.features.commons.exception.users.DuplicateEmailExcepti
 import com.example.sporty.features.commons.exception.users.DuplicateNicknameException;
 import com.example.sporty.features.commons.exception.users.PasswordMismatchException;
 import com.example.sporty.features.commons.exception.users.UserNotFoundException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+
+import lombok.extern.slf4j.Slf4j;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -28,6 +34,7 @@ import com.example.sporty.features.commons.exception.ai.AiDraftException;
 import com.example.sporty.features.commons.exception.ai.AiRecommendException;
 import com.example.sporty.features.commons.exception.ai.AiSearchException;
 
+@Slf4j 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
@@ -259,5 +266,49 @@ public class GlobalExceptionHandler {
                         .message(e.getMessage())
                         .build());
     }
+
+    @ExceptionHandler(UserServiceUnavailableException.class)
+    public ResponseEntity<ErrorResponse> handleUserServiceUnavailable(
+            UserServiceUnavailableException e) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+        .body(ErrorResponse.builder()
+        .code("USER_SERVICE_UNAVAILABLE")
+        .message("잠시 후 다시 시도해주세요.")
+        .build());
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ErrorResponse> handleTypeMismatch(
+            MethodArgumentTypeMismatchException e) {
+
+        return ResponseEntity.badRequest()
+                .body(ErrorResponse.builder()
+                        .message("요청 파라미터 형식이 올바르지 않습니다.")
+                        .code(null)
+                        .build());
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponse> handleMessageNotReadable(
+            HttpMessageNotReadableException e) {
+
+        return ResponseEntity.badRequest()
+                .body(ErrorResponse.builder()
+                        .message("요청 본문 형식이 올바르지 않습니다.")
+                        .code(null)
+                        .build());
+    }
+
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ErrorResponse> handleUnexpectedException(Exception e) {
+        log.error("Unhandled exception", e);
+
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+            .body(ErrorResponse.builder()
+                    .message("서버 내부 오류가 발생했습니다.")
+                    .code(null)
+                    .build());
+    }
+    
 
 }
