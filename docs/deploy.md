@@ -38,9 +38,9 @@
 
 ### Compose 구성
 
-EC2 에서는 `docker compose -f compose.yaml -f compose.aws.yaml up -d` 로 올린다. `compose.aws.yaml` 은 로컬 MariaDB 컨테이너 3개를 빼고 DB 주소만 RDS 엔드포인트로 바꾸는 override 이다 (W-35 에서 작성).
+EC2 에서는 `docker compose -f compose.yaml -f compose.app.yaml -f compose.aws.yaml up -d` 로 올린다. `compose.app.yaml` 은 앱 서비스 7개 + 프론트(nginx)를 올리는 override(W-34 선행), `compose.aws.yaml` 은 로컬 MariaDB 컨테이너 3개를 빼고 DB 주소만 RDS 엔드포인트로 바꾸는 override 이다 (W-35 에서 작성).
 
-- 서비스 이미지: `backend/Dockerfile` (W-23) 로 서비스별 빌드, ECR 에 push. 빌드 arg 는 `SERVICE` · `PORT`.
+- 서비스 이미지: 서비스마다 `backend/{서비스}/Dockerfile` (담당자가 원본 관리), 이를 이어 붙인 master `backend/Dockerfile` 의 `--target {서비스}` 로 빌드해 ECR 에 push. 프론트는 `frontend/Dockerfile`(nginx). Dockerfile 구조는 CONTRIBUTING 의 "서비스 이미지 빌드" 를 따른다.
 - 기동 순서는 `depends_on` + healthcheck 로 건다: config → discovery → 업무 서비스 → gateway.
 - 메모리 16GB 안에 업무 4 + 공통 3 + kafka · redis · zipkin 이 들어가는지가 1단계의 주된 리스크. OOM 이 나면 서비스별 `JAVA_TOOL_OPTIONS` 의 `MaxRAMPercentage` 를 낮추거나 zipkin 을 먼저 뺀다.
 
@@ -51,7 +51,7 @@ EC2 에서는 `docker compose -f compose.yaml -f compose.aws.yaml up -d` 로 올
 | 0 (11/3, W-29) | AWS 계정 수령, 리전 `ap-northeast-2`, 비용 한도 알림(Budgets), 이 문서 머지 |
 | 1 | VPC · 서브넷 6개 · NAT · 보안 그룹 3개 생성 |
 | 2 | **RDS 3대 생성** (10분 내외 걸려서 가장 먼저 시작), 스키마 · 계정 생성 |
-| 3 | ECR 저장소 7개, GitHub Actions 가 OIDC 역할로 빌드 후 push |
+| 3 | ECR 저장소 8개 (서비스 7 + frontend), GitHub Actions 가 OIDC 역할로 빌드 후 push |
 | 4 | EC2 생성 (Amazon Linux 2023, Docker · compose 플러그인), IAM 역할에 ECR pull · Secrets Manager 읽기 · SSM |
 | 5 | Secrets Manager 값으로 `.env` 생성 → `docker compose up -d` |
 | 6 | ALB 대상 그룹 헬스체크 `/actuator/health`, 프론트 `REACT_APP_BACKEND_ENDPOINT` 를 ALB 주소로 빌드 |
