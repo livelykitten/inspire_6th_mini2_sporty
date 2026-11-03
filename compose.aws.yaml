@@ -1,0 +1,71 @@
+# W-35 AWS 배포용 override. compose.yaml + compose.app.yaml 위에 얹는다 (EC2 에서는 deploy/ec2/deploy.sh 가 조합한다).
+#
+#   docker compose -f compose.yaml -f compose.app.yaml -f compose.aws.yaml [-f compose.awslogs.yaml] [-f compose.ecr.yaml] up -d
+#
+# 하는 일:
+#  - 로컬 MariaDB 컨테이너 3개를 끄고(profile "local-db") 서비스 DB 접속을 RDS 엔드포인트로 바꾼다.
+#  - kafka · redis 의 호스트 포트를 닫고, 앱 서비스의 호스트 포트는 127.0.0.1 로만 연다 (밖에는 nginx 80 만 노출).
+# 로컬에서 배선만 점검하려면 USER_RDS_ENDPOINT=user-db 처럼 로컬 DB 컨테이너 이름을 주고 --profile local-db 를 함께 준다.
+#
+# 필요한 값(.env 는 deploy.sh 가 Secrets Manager 에서 만든다): *_RDS_ENDPOINT, USER_DB_PASSWORD, MATCH_DB_PASSWORD,
+#   FACILITY_DB_PASSWORD (.env.aws.example 참고). DB 계정은 인스턴스 마스터 계정 = 서비스 계정이다.
+#
+# 담당: 반정욱 (@salieri009) · 작업 위치: compose.aws.yaml
+
+services:
+  # 로컬 DB 는 AWS 에서 쓰지 않는다 (RDS 사용). 켜려면 --profile local-db.
+  user-db:
+    profiles: ["local-db"]
+  match-db:
+    profiles: ["local-db"]
+  facility-db:
+    profiles: ["local-db"]
+
+  # 인프라 컨테이너는 호스트에 열지 않는다 (같은 compose 네트워크 안에서만 접근).
+  kafka:
+    ports: !reset []
+  redis:
+    ports: !reset []
+
+  discovery-service:
+    ports: !override ["127.0.0.1:8761:8761"]
+
+  config-service:
+    ports: !override ["127.0.0.1:8888:8888"]
+
+  user-service:
+    ports: !override ["127.0.0.1:8001:8001"]
+    environment:
+      DB_URL: jdbc:mariadb://${USER_RDS_ENDPOINT:?USER_RDS_ENDPOINT 를 설정하세요}:3306/user_db
+      DB_USERNAME: user_svc
+      DB_PASSWORD: ${USER_DB_PASSWORD:?USER_DB_PASSWORD 를 설정하세요}
+    depends_on: !override
+      config-service: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+
+  match-service:
+    ports: !override ["127.0.0.1:8002:8002"]
+    environment:
+      DB_URL: jdbc:mariadb://${MATCH_RDS_ENDPOINT:?MATCH_RDS_ENDPOINT 를 설정하세요}:3306/match_db
+      DB_USERNAME: match_svc
+      DB_PASSWORD: ${MATCH_DB_PASSWORD:?MATCH_DB_PASSWORD 를 설정하세요}
+    depends_on: !override
+      config-service: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+
+  facility-service:
+    ports: !override ["127.0.0.1:8003:8003"]
+    environment:
+      DB_URL: jdbc:mariadb://${FACILITY_RDS_ENDPOINT:?FACILITY_RDS_ENDPOINT 를 설정하세요}:3306/facility_db
+      DB_USERNAME: facility_svc
+      DB_PASSWORD: ${FACILITY_DB_PASSWORD:?FACILITY_DB_PASSWORD 를 설정하세요}
+    depends_on: !override
+      config-service: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+
+  ai-service:
+    ports: !override ["127.0.0.1:8004:8004"]
+
+  gateway-service:
+    ports: !override ["127.0.0.1:8000:8000"]

@@ -1,0 +1,108 @@
+name: image
+
+# 서비스 이미지를 ECR 에 push 한다 (W-35, DeployMode=ecr 용). 장기 키 없이 GitHub OIDC 로 AWS 역할을 맡는다.
+# 준비: stack1 출력 GithubEcrPushRoleArn 을 저장소 변수 AWS_ROLE_ARN 에 넣는다 (infra/aws/README.md).
+# 변수가 없으면 이 워크플로는 아무것도 push 하지 않고 안내 메시지로 실패한다.
+# 담당: 반정욱 (@salieri009) · 작업 위치: .github/workflows/image.yml
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'ap-northeast-2' }}
+  ECR_PREFIX: ${{ vars.ECR_PREFIX || 'sporty' }}
+
+jobs:
+  check-role:
+    name: AWS_ROLE_ARN 확인
+    if: ${{ vars.AWS_ROLE_ARN == '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "::error title=AWS_ROLE_ARN::저장소 변수 AWS_ROLE_ARN 이 없습니다. stack1 출력 GithubEcrPushRoleArn 을 Settings > Variables 에 넣으세요 (infra/aws/README.md)."
+          exit 1
+
+  backend:
+    name: push (${{ matrix.service }})
+    if: ${{ vars.AWS_ROLE_ARN != '' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - discovery-service
+          - config-service
+          - gateway-service
+          - user-service
+          - match-service
+          - facility-service
+          - ai-service
+    steps:
+      - name: 코드 내려받기
+        uses: actions/checkout@v4
+
+      - name: AWS 자격증명 (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: ECR 로그인
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Buildx 설정
+        uses: docker/setup-buildx-action@v3
+
+      - name: 이미지 빌드 · push (master Dockerfile 의 target)
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          file: backend/Dockerfile
+          target: ${{ matrix.service }}
+          build-contexts: |
+            config-repo=config-repo
+          push: true
+          tags: |
+            ${{ steps.ecr.outputs.registry }}/${{ env.ECR_PREFIX }}/${{ matrix.service }}:${{ github.sha }}
+            ${{ steps.ecr.outputs.registry }}/${{ env.ECR_PREFIX }}/${{ matrix.service }}:latest
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,scope=${{ matrix.service }},mode=max
+
+  frontend:
+    name: push (frontend)
+    if: ${{ vars.AWS_ROLE_ARN != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: 코드 내려받기
+        uses: actions/checkout@v4
+
+      - name: AWS 자격증명 (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: ECR 로그인
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Buildx 설정
+        uses: docker/setup-buildx-action@v3
+
+      - name: 이미지 빌드 · push
+        uses: docker/build-push-action@v6
+        with:
+          context: frontend
+          push: true
+          tags: |
+            ${{ steps.ecr.outputs.registry }}/${{ env.ECR_PREFIX }}/frontend:${{ github.sha }}
+            ${{ steps.ecr.outputs.registry }}/${{ env.ECR_PREFIX }}/frontend:latest
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,scope=frontend,mode=max
