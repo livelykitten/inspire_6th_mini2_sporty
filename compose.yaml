@@ -112,6 +112,15 @@ services:
         done
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --list
 
+  # W-33 로컬 분산 추적. 메모리 저장이므로 재시작 시 추적 데이터는 초기화된다.
+  zipkin:
+    image: openzipkin/zipkin:3
+    ports:
+      - "9411:9411"
+    environment:
+      STORAGE_TYPE: mem
+    restart: unless-stopped
+
 volumes:
   user-db-data:
   match-db-data:
