@@ -3,6 +3,8 @@ name: image
 # 서비스 이미지를 ECR 에 push 한다 (W-35, DeployMode=ecr 용). 장기 키 없이 GitHub OIDC 로 AWS 역할을 맡는다.
 # 준비: stack1 출력 GithubEcrPushRoleArn 을 저장소 변수 AWS_ROLE_ARN 에 넣는다 (infra/aws/README.md).
 # 변수가 없으면 이 워크플로는 아무것도 push 하지 않고 안내 메시지로 실패한다.
+# 태그 v* push(= 배포용 릴리스)는 먼저 배포 전 점검(msa-tests.yml: 점수 + 부하 스모크)을 통과해야 push 한다.
+# 수동 실행(workflow_dispatch)은 점검을 건너뛴다 (이미 확인한 커밋을 다시 올릴 때).
 # 담당: 반정욱 (@salieri009) · 작업 위치: .github/workflows/image.yml
 
 on:
@@ -19,9 +21,15 @@ env:
   ECR_PREFIX: ${{ vars.ECR_PREFIX || 'sporty' }}
 
 jobs:
+  gate:
+    name: 배포 전 점검
+    if: ${{ github.event_name == 'push' }}
+    uses: ./.github/workflows/msa-tests.yml
+
   check-role:
     name: AWS_ROLE_ARN 확인
-    if: ${{ vars.AWS_ROLE_ARN == '' }}
+    needs: gate
+    if: ${{ !cancelled() && (needs.gate.result == 'success' || needs.gate.result == 'skipped') && vars.AWS_ROLE_ARN == '' }}
     runs-on: ubuntu-latest
     steps:
       - run: |
@@ -30,7 +38,8 @@ jobs:
 
   backend:
     name: push (${{ matrix.service }})
-    if: ${{ vars.AWS_ROLE_ARN != '' }}
+    needs: gate
+    if: ${{ !cancelled() && (needs.gate.result == 'success' || needs.gate.result == 'skipped') && vars.AWS_ROLE_ARN != '' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -79,7 +88,8 @@ jobs:
 
   frontend:
     name: push (frontend)
-    if: ${{ vars.AWS_ROLE_ARN != '' }}
+    needs: gate
+    if: ${{ !cancelled() && (needs.gate.result == 'success' || needs.gate.result == 'skipped') && vars.AWS_ROLE_ARN != '' }}
     runs-on: ubuntu-latest
     steps:
       - name: 코드 내려받기
