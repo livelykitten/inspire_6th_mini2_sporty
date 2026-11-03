@@ -1,0 +1,24 @@
+# facility-service 설정 (W-24). 비밀값은 ${환경변수} 로만 두고 값은 각자 .env (로컬) 에 있다
+spring:
+  datasource:
+    driver-class-name: ${DB_DRIVER:org.mariadb.jdbc.Driver}
+    url: ${DB_URL:jdbc:mariadb://localhost:3308/facility_db}
+    username: ${DB_USERNAME:facility_svc}
+    password: ${DB_PASSWORD:facility_svc}
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+
+# 공공데이터 API 키는 .env 의 PUBLIC_DATA_API_KEY
+facility:
+  openapi:
+    service-key: ${PUBLIC_DATA_API_KEY:}
+    base-url: ${PUBLIC_DATA_API_URL:}
+    service-name: ListPublicReservationSport
+    data-type: json
+  sync:
+    cron: "0 0 3 * * *"
+    zone: "Asia/Seoul"
+    on-startup: ${FACILITY_SYNC_ON_STARTUP:true}
