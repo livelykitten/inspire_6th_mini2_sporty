@@ -6,8 +6,12 @@ Config 서버(`config-service`, 8888)가 서비스에 나눠 주는 설정 파�
 |---|---|
 | `application.yml` | 전 서비스 공통 |
 | `gateway-service.yml` | 게이트웨이 (라우트 · CORS · jwt.secret) |
-| `user-service.yml` · `match-service.yml` · … | 각 서비스 (`spring.application.name` 과 같은 이름) |
+| `user-service.yml` · `match-service.yml` · `facility-service.yml` · `ai-service.yml` | 각 서비스 (`spring.application.name` 과 같은 이름) |
 | `{서비스}-dev.yml` | 배포(dev 프로필)에서만, 비밀값은 `'{cipher}...'` |
+
+## 서비스 쪽 application.yml 과의 관계
+- 같은 키가 둘 다 있으면 **Config 서버 값이 이긴다**. 서비스 쪽 값은 Config 서버가 꺼져 있을 때 쓰는 기본값으로 남겨 둔다.
+- 설정을 바꿀 때는 이 폴더 파일을 고친다. 서비스 쪽만 고치면 Config 서버가 켜져 있을 때 반영되지 않는다.
 
 ## 비밀값 규칙
 - 이 폴더에는 평문 비밀값을 넣지 않는다. 로컬은 `${환경변수}` 로 두고 값은 각자 `.env` 에 있다.
