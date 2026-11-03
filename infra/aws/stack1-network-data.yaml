@@ -444,6 +444,8 @@ Resources:
         - { Key: Name, Value: !Sub "${ProjectName}-${EnvName}-facility-db" }
 
   # ---------------------------------------------------------------- ECR (서비스 7 + frontend)
+  # 수명주기 정책(모든 저장소 동일): 태그 없는 이미지는 1일 뒤 삭제, 태그가 있는 이미지는 최근 5개만 유지한다.
+  # 푸시마다 커밋 SHA 태그가 쌓이는 것을 막아 ECR 저장 비용을 줄인다. 매니페스트 리스트가 참조하는 이미지는 ECR 이 만료시키지 않는다.
   EcrDiscovery:
     Type: AWS::ECR::Repository
     DeletionPolicy: Delete
@@ -452,7 +454,7 @@ Resources:
       EmptyOnDelete: true
       ImageScanningConfiguration: { ScanOnPush: true }
       LifecyclePolicy:
-        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"keep last 10","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":10},"action":{"type":"expire"}}]}'
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"expire untagged images after 1 day","selection":{"tagStatus":"untagged","countType":"sinceImagePushed","countUnit":"days","countNumber":1},"action":{"type":"expire"}},{"rulePriority":2,"description":"keep only the last 5 images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":5},"action":{"type":"expire"}}]}'
 
   EcrConfig:
     Type: AWS::ECR::Repository
@@ -462,7 +464,7 @@ Resources:
       EmptyOnDelete: true
       ImageScanningConfiguration: { ScanOnPush: true }
       LifecyclePolicy:
-        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"keep last 10","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":10},"action":{"type":"expire"}}]}'
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"expire untagged images after 1 day","selection":{"tagStatus":"untagged","countType":"sinceImagePushed","countUnit":"days","countNumber":1},"action":{"type":"expire"}},{"rulePriority":2,"description":"keep only the last 5 images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":5},"action":{"type":"expire"}}]}'
 
   EcrGateway:
     Type: AWS::ECR::Repository
@@ -472,7 +474,7 @@ Resources:
       EmptyOnDelete: true
       ImageScanningConfiguration: { ScanOnPush: true }
       LifecyclePolicy:
-        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"keep last 10","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":10},"action":{"type":"expire"}}]}'
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"expire untagged images after 1 day","selection":{"tagStatus":"untagged","countType":"sinceImagePushed","countUnit":"days","countNumber":1},"action":{"type":"expire"}},{"rulePriority":2,"description":"keep only the last 5 images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":5},"action":{"type":"expire"}}]}'
 
   EcrUser:
     Type: AWS::ECR::Repository
@@ -482,7 +484,7 @@ Resources:
       EmptyOnDelete: true
       ImageScanningConfiguration: { ScanOnPush: true }
       LifecyclePolicy:
-        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"keep last 10","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":10},"action":{"type":"expire"}}]}'
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"expire untagged images after 1 day","selection":{"tagStatus":"untagged","countType":"sinceImagePushed","countUnit":"days","countNumber":1},"action":{"type":"expire"}},{"rulePriority":2,"description":"keep only the last 5 images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":5},"action":{"type":"expire"}}]}'
 
   EcrMatch:
     Type: AWS::ECR::Repository
@@ -492,7 +494,7 @@ Resources:
       EmptyOnDelete: true
       ImageScanningConfiguration: { ScanOnPush: true }
       LifecyclePolicy:
-        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"keep last 10","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":10},"action":{"type":"expire"}}]}'
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"expire untagged images after 1 day","selection":{"tagStatus":"untagged","countType":"sinceImagePushed","countUnit":"days","countNumber":1},"action":{"type":"expire"}},{"rulePriority":2,"description":"keep only the last 5 images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":5},"action":{"type":"expire"}}]}'
 
   EcrFacility:
     Type: AWS::ECR::Repository
@@ -502,7 +504,7 @@ Resources:
       EmptyOnDelete: true
       ImageScanningConfiguration: { ScanOnPush: true }
       LifecyclePolicy:
-        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"keep last 10","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":10},"action":{"type":"expire"}}]}'
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"expire untagged images after 1 day","selection":{"tagStatus":"untagged","countType":"sinceImagePushed","countUnit":"days","countNumber":1},"action":{"type":"expire"}},{"rulePriority":2,"description":"keep only the last 5 images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":5},"action":{"type":"expire"}}]}'
 
   EcrAi:
     Type: AWS::ECR::Repository
@@ -512,7 +514,7 @@ Resources:
       EmptyOnDelete: true
       ImageScanningConfiguration: { ScanOnPush: true }
       LifecyclePolicy:
-        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"keep last 10","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":10},"action":{"type":"expire"}}]}'
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"expire untagged images after 1 day","selection":{"tagStatus":"untagged","countType":"sinceImagePushed","countUnit":"days","countNumber":1},"action":{"type":"expire"}},{"rulePriority":2,"description":"keep only the last 5 images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":5},"action":{"type":"expire"}}]}'
 
   EcrFrontend:
     Type: AWS::ECR::Repository
@@ -522,7 +524,7 @@ Resources:
       EmptyOnDelete: true
       ImageScanningConfiguration: { ScanOnPush: true }
       LifecyclePolicy:
-        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"keep last 10","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":10},"action":{"type":"expire"}}]}'
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"expire untagged images after 1 day","selection":{"tagStatus":"untagged","countType":"sinceImagePushed","countUnit":"days","countNumber":1},"action":{"type":"expire"}},{"rulePriority":2,"description":"keep only the last 5 images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":5},"action":{"type":"expire"}}]}'
 
   # ---------------------------------------------------------------- GitHub Actions -> ECR push (OIDC, 장기 키 없음)
   GithubOidcProvider:
@@ -546,12 +548,28 @@ Resources:
             Condition:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
+              # GitHub 의 sub 클레임은 두 형식이 있다 (저장소 설정 use_immutable_subject).
+              #   기존:  repo:owner/repo:ref:refs/heads/develop
+              #   불변:  repo:owner@{소유자ID}/repo@{저장소ID}:ref:refs/heads/develop   (새 저장소 기본값, 실제 배포 시험에서 확인)
+              # 둘 다 허용한다. ID 는 와일드카드로 두되 소유자 · 저장소 이름은 고정이다.
               StringLike:
                 token.actions.githubusercontent.com:sub:
                   - !Sub "repo:${GithubRepo}:ref:refs/heads/develop"
                   - !Sub "repo:${GithubRepo}:ref:refs/heads/main"
                   - !Sub "repo:${GithubRepo}:ref:refs/tags/*"
                   - !Sub "repo:${GithubRepo}:ref:${GithubExtraRef}"
+                  - !Sub
+                    - "repo:${Owner}@*/${Repo}@*:ref:refs/heads/develop"
+                    - { Owner: !Select [0, !Split ["/", !Ref GithubRepo]], Repo: !Select [1, !Split ["/", !Ref GithubRepo]] }
+                  - !Sub
+                    - "repo:${Owner}@*/${Repo}@*:ref:refs/heads/main"
+                    - { Owner: !Select [0, !Split ["/", !Ref GithubRepo]], Repo: !Select [1, !Split ["/", !Ref GithubRepo]] }
+                  - !Sub
+                    - "repo:${Owner}@*/${Repo}@*:ref:refs/tags/*"
+                    - { Owner: !Select [0, !Split ["/", !Ref GithubRepo]], Repo: !Select [1, !Split ["/", !Ref GithubRepo]] }
+                  - !Sub
+                    - "repo:${Owner}@*/${Repo}@*:ref:${Extra}"
+                    - { Owner: !Select [0, !Split ["/", !Ref GithubRepo]], Repo: !Select [1, !Split ["/", !Ref GithubRepo]], Extra: !Ref GithubExtraRef }
       Policies:
         - PolicyName: ecr-push
           PolicyDocument:

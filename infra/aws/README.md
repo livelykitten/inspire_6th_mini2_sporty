@@ -134,6 +134,7 @@ EC2 t3.xlarge · NAT Gateway · ALB · RDS db.t4g.micro ×3 · 로그 · 시크�
 - 알람 → SNS → Discord Lambda 경로가 실제 알람 전환으로 동작했다. 웹훅 URL 이 `CHANGE_ME` 이면 Lambda 가 "전송 생략" 로그만 남긴다.
 - **첫 배포 중 15~20분 동안 `alb-unhealthy-host` · `ec2-cpu-high` 알람이 울리는 것은 정상이다** (nginx 가 뜨기 전 대상이 비정상, 이미지 빌드로 CPU 급등). 부트스트랩이 끝나면 몇 분 안에 OK 로 돌아온다.
 - 이미지를 병렬로 빌드하면 Gradle 캐시 락 경합으로 실패할 수 있어 Dockerfile 의 캐시 마운트를 `sharing=locked` 로 고쳤다 (W-35 브랜치). 이 수정이 들어간 `GitRef` 를 써야 한다.
+- **GitHub OIDC 의 `sub` 클레임이 불변 형식**(`repo:owner@소유자ID/repo@저장소ID:ref:...`)이라 처음 템플릿의 신뢰 정책(기존 형식만)이 `AssumeRoleWithWebIdentity` 를 거부했다. CloudTrail 의 `AssumeRoleWithWebIdentity` 실패 이벤트에서 실제 `userName`(= sub)을 확인해 두 형식을 모두 허용하도록 고쳤다. 다른 저장소로 옮기면 `GithubRepo` 만 바꾸면 된다.
 - Windows 의 AWS CLI 로 한글이 들어간 템플릿을 올릴 때는 `AWS_CLI_FILE_ENCODING=UTF-8` 환경변수가 필요하다 (콘솔 업로드는 해당 없음).
 
 ## 실패했을 때
