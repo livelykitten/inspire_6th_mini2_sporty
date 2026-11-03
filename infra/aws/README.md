@@ -37,7 +37,7 @@ AZ 는 리전의 첫 두 AZ(서울은 `a`, `b`)를 쓴다. 인증서 없이 HTTP
 Secrets Manager 에서 설명이 "외부 API 키" 인 시크릿 → **값 보기 → 편집** → `OPEN_AI_KEY`, `PUBLIC_DATA_API_KEY` 를 입력한다 (`CHANGE_ME` 를 바꾼다). 지금 못 넣어도 서비스는 더미 값으로 뜨고 AI 호출만 실패한다. 나중에 넣고 3-B 의 재배포를 하면 된다.
 
 ### 3. 이미지 전달 방식 (둘 중 하나)
-- **A. ECR (권장)**: 저장소 Settings → Secrets and variables → Actions → **Variables** 에 `AWS_ROLE_ARN` = stack1 출력 `GithubEcrPushRoleArn`, `AWS_REGION` = `ap-northeast-2` 를 만든다 (저장소 admin 권한 필요, 막히면 B). Actions 의 **image** 워크플로를 `workflow_dispatch` 로 실행하고 끝나면 이미지 태그(커밋 SHA)를 메모한다. stack2 에서 `DeployMode=ecr`, `ImageTag=<SHA>`.
+- **A. ECR (권장)**: 저장소 Settings → Secrets and variables → Actions → **Variables** 에 `AWS_ROLE_ARN` = stack1 출력 `GithubEcrPushRoleArn`, `AWS_REGION` = `ap-northeast-2` 를 만든다 (저장소 admin 권한 필요, 막히면 B). Actions 의 **image** 워크플로를 `workflow_dispatch` 로 실행하고 끝나면 이미지 태그(커밋 SHA)를 메모한다. `workflow_dispatch` 는 `image.yml` 이 기본 브랜치(main)에 있어야 보이므로, 머지 전에는 `v*` 태그를 푸시해 실행한다 (태그가 가리키는 커밋의 워크플로가 쓰인다). stack2 에서 `DeployMode=ecr`, `ImageTag=<SHA>`.
 - **B. EC2 에서 직접 빌드 (대안)**: AWS 설정이 필요 없다. stack2 의 `DeployMode=build` (기본값). 첫 빌드가 10~20분 걸린다.
 
 ### 4. stack2
@@ -135,6 +135,11 @@ EC2 t3.xlarge · NAT Gateway · ALB · RDS db.t4g.micro ×3 · 로그 · 시크�
 - **첫 배포 중 15~20분 동안 `alb-unhealthy-host` · `ec2-cpu-high` 알람이 울리는 것은 정상이다** (nginx 가 뜨기 전 대상이 비정상, 이미지 빌드로 CPU 급등). 부트스트랩이 끝나면 몇 분 안에 OK 로 돌아온다.
 - 이미지를 병렬로 빌드하면 Gradle 캐시 락 경합으로 실패할 수 있어 Dockerfile 의 캐시 마운트를 `sharing=locked` 로 고쳤다 (W-35 브랜치). 이 수정이 들어간 `GitRef` 를 써야 한다.
 - **GitHub OIDC 의 `sub` 클레임이 불변 형식**(`repo:owner@소유자ID/repo@저장소ID:ref:...`)이라 처음 템플릿의 신뢰 정책(기존 형식만)이 `AssumeRoleWithWebIdentity` 를 거부했다. CloudTrail 의 `AssumeRoleWithWebIdentity` 실패 이벤트에서 실제 `userName`(= sub)을 확인해 두 형식을 모두 허용하도록 고쳤다. 다른 저장소로 옮기면 `GithubRepo` 만 바꾸면 된다.
+- **ECR 경로(`DeployMode=ecr`)도 같은 방식으로 검증**: 태그 푸시 → GitHub OIDC 로 역할 위임 → 서비스 7 + frontend 이미지 8개 ECR push → EC2 가 ECR 에서 pull 해 기동 → ALB smoke 9항목 통과.
+- **ECR 수명주기 정책**(8개 저장소 공통): 태그 없는 이미지는 1일 뒤 삭제, 태그가 있는 이미지는 최근 5개만 유지. `get-lifecycle-policy` 로 적용을 확인했다.
+- **이미지 경량화**: 런타임을 Alpine JRE 로 바꿔 ECR 압축 크기가 서비스당 148~205MB → 108~165MB(약 22% 감소), EC2 비압축 크기는 347~412MB → 235~300MB. Alpine 에는 curl 이 없어 컨테이너 헬스체크는 busybox wget(127.0.0.1)을 쓴다. 이미지는 push 시 `provenance: false` 로 태그 없는 attestation 항목을 만들지 않는다.
+- 저장소 변수 `AWS_ROLE_ARN` 은 저장소 admin 만 만들 수 있다. 시험은 admin 이 아닌 계정이라 임시 커밋에 역할 ARN 을 직접 넣어 태그로 실행했다(태그 · 커밋은 시험 뒤 삭제).
+- stack2 의 `ImageTag` · `GitRef` 에는 문자 제한(AllowedPattern)이 있다. CLI 에서 셸 변수를 잘못 넘겨 `$sha` 가 그대로 들어가 user-data 가 깨진 적이 있기 때문이다.
 - Windows 의 AWS CLI 로 한글이 들어간 템플릿을 올릴 때는 `AWS_CLI_FILE_ENCODING=UTF-8` 환경변수가 필요하다 (콘솔 업로드는 해당 없음).
 
 ## 실패했을 때
