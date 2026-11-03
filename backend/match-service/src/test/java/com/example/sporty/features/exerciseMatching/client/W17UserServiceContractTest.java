@@ -40,6 +40,8 @@ import org.springframework.web.bind.annotation.*;
 @ExtendWith(MockitoExtension.class)
 class W17UserServiceContractTest {
     @Mock UserServiceClient client;
+    @Mock com.example.sporty.features.exerciseMatching.withdrawal.MatchUserGuardService guards;
+    @Mock org.springframework.transaction.PlatformTransactionManager transactionManager;
     @Mock MatchRepository matches;
     @Mock MatchParticipantRepository participants;
     @Mock FacilityServiceSnapshotRepository facilities;
@@ -52,7 +54,7 @@ class W17UserServiceContractTest {
     @BeforeEach
     void setUp() {
         lookup = new MemberLookupImpl(client);
-        service = new MatchService(matches, participants, lookup, facilities);
+        service = new MatchService(matches, participants, lookup, facilities, guards, transactionManager);
         mvc = MockMvcBuilders.standaloneSetup(new MatchController(service))
                 .setControllerAdvice(new GlobalExceptionHandler()).build();
     }
@@ -112,7 +114,7 @@ class W17UserServiceContractTest {
     void missingUserInEm01AndEm06Returns401(String endpoint) throws Exception {
         when(client.getUserStatus(null)).thenAnswer(invocation -> factory.create(http(404)).getUserStatus(null));
         if (endpoint.equals("join")) {
-            when(matches.findByIdForUpdate(101L)).thenReturn(Optional.of(mock(MatchEntity.class)));
+            when(matches.existsById(101L)).thenReturn(true);
         }
         mvc.perform(requestFor(endpoint)).andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("MATCH_USER_NOT_FOUND"));

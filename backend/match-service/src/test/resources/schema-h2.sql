@@ -1,3 +1,5 @@
+SET MODE MariaDB;
+DROP TABLE IF EXISTS match_user_guard;
 DROP TABLE IF EXISTS match_participant;
 DROP TABLE IF EXISTS "match";
 DROP TABLE IF EXISTS facility_service_snapshot;
@@ -42,4 +44,9 @@ CREATE TABLE match_participant (
     CONSTRAINT fk_match_participant_match FOREIGN KEY (match_id)
         REFERENCES "match"(id),
     CONSTRAINT uk_match_participant_match_user UNIQUE (match_id, user_id)
+);
+
+CREATE TABLE match_user_guard (
+    user_id BIGINT PRIMARY KEY,
+    is_blocked BOOLEAN DEFAULT FALSE NOT NULL
 );

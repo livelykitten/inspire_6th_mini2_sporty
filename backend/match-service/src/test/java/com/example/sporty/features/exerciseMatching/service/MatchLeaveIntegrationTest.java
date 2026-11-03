@@ -48,7 +48,7 @@ import com.example.sporty.features.exerciseMatching.repository.MatchRepository;
         "test.context-id=match-leave"
 })
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.ANY)
-@Import(MatchService.class)
+@Import({MatchService.class, com.example.sporty.features.exerciseMatching.withdrawal.MatchUserGuardService.class})
 // 테스트의 바깥 트랜잭션 없이 실제 Service의 커밋/롤백 결과를 조회한다.
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class MatchLeaveIntegrationTest {
