@@ -4,7 +4,7 @@
 # 작업 위치: frontend/Dockerfile, frontend/nginx.conf (이 파일이 원본, master 대상 아님)
 # 빌드: docker build -t sporty/frontend:local frontend
 #
-# 1단계 배포 구조와 같다: ALB 가 / 는 이 nginx 로, /api/** 는 gateway 로 보내는 것을 로컬에서는 nginx 한 곳이 대신한다.
+# 1단계 배포 구조와 같다: ALB 는 이 nginx 로만 보내고, nginx 가 / 는 정적 파일로, /api/ 는 gateway 로 보낸다 (로컬 · AWS 동일).
 
 FROM node:22-alpine AS build
 WORKDIR /app

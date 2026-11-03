@@ -10,24 +10,24 @@
 | 항목 | 1단계: EC2 + RDS | 2단계: EKS |
 |---|---|---|
 | 요구사항 | OPT-04 클라우드 실배포 | OPT-04 + OPT-03 K8s (시트에 추가 필요) |
-| 앱 실행 | EC2 t3.xlarge 1대(메모리 16GB)에서 Docker Compose. 컨테이너: 업무 4 + 공통 3 + kafka · redis · zipkin | EKS 관리형 노드그룹 2대, 서비스마다 Deployment + Service |
+| 앱 실행 | EC2 t3.xlarge 1대(메모리 16GB)에서 Docker Compose. 컨테이너: 업무 4 + 공통 3 + frontend(nginx) + kafka · redis (zipkin 은 W-33 에서 추가되면 포함) | EKS 관리형 노드그룹 2대, 서비스마다 Deployment + Service |
 | DB | RDS MariaDB 3대 (user_db · match_db · facility_db) | 1단계 RDS 그대로 재사용 |
 | Kafka · Redis | Compose 컨테이너 (로컬과 같은 설정) | StatefulSet · Pod (MSK · ElastiCache 는 비용 · 생성 시간 때문에 제외) |
-| 진입점 | ALB :443 → EC2 :8000 | AWS Load Balancer Controller Ingress |
+| 진입점 | ALB :80 → EC2 :80 (nginx) → gateway :8000. 도메인 · 인증서가 생기면 443 을 추가 | AWS Load Balancer Controller Ingress |
 | 비밀값 | Secrets Manager → EC2 `.env` (또는 Config `{cipher}`) | Secrets Manager → K8s Secret |
 | 준비 시간 (예상) | 2 ~ 3시간 | 추가 3 ~ 4시간 (클러스터 생성 대기 포함) |
 | 리스크 | 단일 장애점, 메모리 부족 시 OOM | 시간 초과, 노드 메모리, 비용 |
 
 ## 1단계: EC2 1대 + RDS 3대
 
-사용자는 ALB 로만 들어오고, EC2 와 RDS 는 Private Subnet 에 둔다. 외부 API(OpenAI, 서울 열린데이터)는 NAT Gateway 로만 나간다. 프론트 빌드는 같은 Compose 의 nginx 컨테이너가 서빙하고, ALB 가 `/` 는 nginx, `/api/**` 는 gateway 로 보낸다.
+사용자는 ALB 로만 들어오고, EC2 와 RDS 는 Private Subnet 에 둔다. 외부 API(OpenAI, 서울 열린데이터)는 NAT Gateway 로만 나간다. 프론트 빌드는 같은 Compose 의 nginx 컨테이너가 서빙하고, ALB 는 대상 그룹 하나(EC2 :80 의 nginx)로만 보낸다. nginx 가 `/` 는 정적 파일, `/api/` 는 gateway 로 프록시하므로 ALB 경로 규칙은 두지 않는다. 인프라는 CloudFormation 2개 스택(`infra/aws/`)으로 만들고 실행 순서는 `infra/aws/README.md` 런북을 따른다.
 
 ### 네트워크 (CIDR 은 안)
 
 | 구역 | CIDR | 들어가는 것 | 보안 그룹 인바운드 |
 |---|---|---|---|
-| Public Subnet ×2 | 10.0.0.0/24, 10.0.1.0/24 | ALB, NAT Gateway (비용상 1개) | sg-alb: 80 · 443 ← 인터넷 |
-| Private App Subnet ×2 | 10.0.10.0/24, 10.0.11.0/24 | EC2 1대 (2단계에서 EKS 노드) | sg-app: 8000 · 80 ← sg-alb. 22 는 열지 않고 SSM 세션 매니저 사용 |
+| Public Subnet ×2 | 10.0.0.0/24, 10.0.1.0/24 | ALB, NAT Gateway (비용상 1개) | sg-alb: 80 ← 인터넷 (인증서가 생기면 443 추가) |
+| Private App Subnet ×2 | 10.0.10.0/24, 10.0.11.0/24 | EC2 1대 (2단계에서 EKS 노드) | sg-app: 80 ← sg-alb (gateway 8000 은 컨테이너 안에서만 접근). 22 는 열지 않고 SSM 세션 매니저 사용 |
 | Private Data Subnet ×2 | 10.0.20.0/24, 10.0.21.0/24 | RDS 3대 (DB Subnet Group) | sg-db: 3306 ← sg-app 만 |
 
 ### RDS
@@ -38,11 +38,11 @@
 
 ### Compose 구성
 
-EC2 에서는 `docker compose -f compose.yaml -f compose.app.yaml -f compose.aws.yaml up -d` 로 올린다. `compose.app.yaml` 은 앱 서비스 7개 + 프론트(nginx)를 올리는 override(W-34 선행), `compose.aws.yaml` 은 로컬 MariaDB 컨테이너 3개를 빼고 DB 주소만 RDS 엔드포인트로 바꾸는 override 이다 (W-35 에서 작성).
+EC2 에서는 `deploy/ec2/deploy.sh` 가 `docker compose -f compose.yaml -f compose.app.yaml -f compose.aws.yaml` (ECR 이미지를 쓰면 `-f compose.ecr.yaml` 추가)로 올린다. `compose.app.yaml` 은 앱 서비스 7개 + 프론트(nginx)를 올리는 override, `compose.aws.yaml` 은 로컬 MariaDB 컨테이너 3개를 빼고 DB 주소만 RDS 엔드포인트로 바꾸는 override, `compose.awslogs.yaml` 은 컨테이너 로그를 CloudWatch Logs 로 보내는 override 이다.
 
 - 서비스 이미지: 서비스마다 `backend/{서비스}/Dockerfile` (담당자가 원본 관리), 이를 이어 붙인 master `backend/Dockerfile` 의 `--target {서비스}` 로 빌드해 ECR 에 push. 프론트는 `frontend/Dockerfile`(nginx). Dockerfile 구조는 CONTRIBUTING 의 "서비스 이미지 빌드" 를 따른다.
 - 기동 순서는 `depends_on` + healthcheck 로 건다: config → discovery → 업무 서비스 → gateway.
-- 메모리 16GB 안에 업무 4 + 공통 3 + kafka · redis · zipkin 이 들어가는지가 1단계의 주된 리스크. OOM 이 나면 서비스별 `JAVA_TOOL_OPTIONS` 의 `MaxRAMPercentage` 를 낮추거나 zipkin 을 먼저 뺀다.
+- 메모리 16GB 안에 업무 4 + 공통 3 + kafka · redis 가 들어가는지가 1단계의 주된 리스크. OOM 이 나면 서비스별 `JAVA_TOOL_OPTIONS` 의 `MaxRAMPercentage` 를 낮춘다. 메모리 · 디스크는 CloudWatch Agent 지표와 알람으로 감시한다.
 
 ### 절차 (11/4)
 
@@ -54,7 +54,7 @@ EC2 에서는 `docker compose -f compose.yaml -f compose.app.yaml -f compose.aws
 | 3 | ECR 저장소 8개 (서비스 7 + frontend), GitHub Actions 가 OIDC 역할로 빌드 후 push |
 | 4 | EC2 생성 (Amazon Linux 2023, Docker · compose 플러그인), IAM 역할에 ECR pull · Secrets Manager 읽기 · SSM |
 | 5 | Secrets Manager 값으로 `.env` 생성 → `docker compose up -d` |
-| 6 | ALB 대상 그룹 헬스체크 `/actuator/health`, 프론트 `REACT_APP_BACKEND_ENDPOINT` 를 ALB 주소로 빌드 |
+| 6 | ALB 대상 그룹 헬스체크 `/healthz` (nginx). 프론트는 같은 오리진의 `/api/` 로 호출하므로 주소를 따로 넣지 않는다. `deploy/ec2/smoke.sh <ALB 주소>` 로 게이트웨이 경유 응답까지 확인 |
 | 7 | 배포 주소로 시연 흐름(W-27) 확인 → W-41 코드 동결 태그 |
 
 ### 비밀값
