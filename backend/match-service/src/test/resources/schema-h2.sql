@@ -5,6 +5,13 @@ DROP TABLE IF EXISTS match_user_guard;
 DROP TABLE IF EXISTS match_participant;
 DROP TABLE IF EXISTS "match";
 DROP TABLE IF EXISTS facility_service_snapshot;
+DROP TABLE IF EXISTS processed_event;
+
+CREATE TABLE processed_event (
+    event_id VARCHAR(36) PRIMARY KEY,
+    topic VARCHAR(100) NOT NULL,
+    processed_at TIMESTAMP NOT NULL
+);
 
 CREATE TABLE facility_service_snapshot (
     service_id BIGINT PRIMARY KEY,

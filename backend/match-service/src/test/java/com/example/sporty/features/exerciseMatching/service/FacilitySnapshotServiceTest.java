@@ -3,6 +3,7 @@ package com.example.sporty.features.exerciseMatching.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.time.LocalDateTime;
@@ -16,8 +17,10 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.example.sporty.features.exerciseMatching.domain.entity.FacilityServiceSnapshotEntity;
+import com.example.sporty.features.exerciseMatching.domain.entity.ProcessedEventEntity;
 import com.example.sporty.features.exerciseMatching.event.FacilityServiceChangedEvent;
 import com.example.sporty.features.exerciseMatching.repository.FacilityServiceSnapshotRepository;
+import com.example.sporty.features.exerciseMatching.repository.ProcessedEventRepository;
 
 @ExtendWith(MockitoExtension.class)
 class FacilitySnapshotServiceTest {
@@ -25,16 +28,20 @@ class FacilitySnapshotServiceTest {
     @Mock
     private FacilityServiceSnapshotRepository repository;
 
+    @Mock
+    private ProcessedEventRepository processedEventRepository;
+
     private FacilitySnapshotService service;
 
     @BeforeEach
     void setUp() {
-        service = new FacilitySnapshotService(repository);
+        service = new FacilitySnapshotService(repository, processedEventRepository);
     }
 
     @Test
     void insertsSnapshotWhenFacilityDoesNotExist() {
         FacilityServiceChangedEvent event = event(LocalDateTime.of(2026, 11, 3, 10, 30), false);
+        when(processedEventRepository.existsById("event-1")).thenReturn(false);
         when(repository.findById(101L)).thenReturn(Optional.empty());
 
         service.apply(event);
@@ -51,6 +58,7 @@ class FacilitySnapshotServiceTest {
         assertThat(saved.getIsFree()).isTrue();
         assertThat(saved.getActive()).isFalse();
         assertThat(saved.getSourceUpdatedAt()).isEqualTo(event.occurredAt());
+        verifyProcessedEventSaved();
     }
 
     @Test
@@ -58,6 +66,7 @@ class FacilitySnapshotServiceTest {
         LocalDateTime previousTime = LocalDateTime.of(2026, 11, 3, 10, 0);
         FacilityServiceSnapshotEntity snapshot = snapshot(previousTime, true);
         FacilityServiceChangedEvent event = event(previousTime.plusMinutes(30), false);
+        when(processedEventRepository.existsById("event-1")).thenReturn(false);
         when(repository.findById(101L)).thenReturn(Optional.of(snapshot));
 
         service.apply(event);
@@ -65,6 +74,7 @@ class FacilitySnapshotServiceTest {
         verify(repository).save(snapshot);
         assertThat(snapshot.getActive()).isFalse();
         assertThat(snapshot.getSourceUpdatedAt()).isEqualTo(event.occurredAt());
+        verifyProcessedEventSaved();
     }
 
     @Test
@@ -72,6 +82,7 @@ class FacilitySnapshotServiceTest {
         LocalDateTime currentTime = LocalDateTime.of(2026, 11, 3, 10, 30);
         FacilityServiceSnapshotEntity snapshot = snapshot(currentTime, true);
         FacilityServiceChangedEvent event = event(currentTime.minusMinutes(1), false);
+        when(processedEventRepository.existsById("event-1")).thenReturn(false);
         when(repository.findById(101L)).thenReturn(Optional.of(snapshot));
 
         service.apply(event);
@@ -79,6 +90,19 @@ class FacilitySnapshotServiceTest {
         verify(repository, never()).save(snapshot);
         assertThat(snapshot.getActive()).isTrue();
         assertThat(snapshot.getSourceUpdatedAt()).isEqualTo(currentTime);
+        verifyProcessedEventSaved();
+    }
+
+    @Test
+    void ignoresDuplicateEventBeforeReadingOrUpdatingSnapshot() {
+        FacilityServiceChangedEvent event = event(LocalDateTime.of(2026, 11, 3, 10, 30), true);
+        when(processedEventRepository.existsById("event-1")).thenReturn(true);
+
+        service.apply(event);
+
+        verify(processedEventRepository).existsById("event-1");
+        verifyNoInteractions(repository);
+        verify(processedEventRepository, never()).save(org.mockito.ArgumentMatchers.any());
     }
 
     private FacilityServiceChangedEvent event(LocalDateTime occurredAt, boolean active) {
@@ -104,5 +128,13 @@ class FacilitySnapshotServiceTest {
                 .active(active)
                 .sourceUpdatedAt(sourceUpdatedAt)
                 .build();
+    }
+
+    private void verifyProcessedEventSaved() {
+        ArgumentCaptor<ProcessedEventEntity> captor =
+                ArgumentCaptor.forClass(ProcessedEventEntity.class);
+        verify(processedEventRepository).save(captor.capture());
+        assertThat(captor.getValue().getEventId()).isEqualTo("event-1");
+        assertThat(captor.getValue().getTopic()).isEqualTo("facility.service.changed");
     }
 }
