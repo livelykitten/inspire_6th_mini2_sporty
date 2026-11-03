@@ -1,5 +1,6 @@
 package com.example.sporty.features.users.controller;
 
+import com.example.sporty.features.commons.exception.profiles.ProfileIntegrityException;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -12,13 +13,13 @@ public class InternalUserExceptionHandler {
     public record InternalErrorResponse(String message, String code) {
     }
 
-    @ExceptionHandler(IllegalStateException.class)
-    public ResponseEntity<InternalErrorResponse> handleIllegalState(
-            IllegalStateException exception
+    @ExceptionHandler(ProfileIntegrityException.class)
+    public ResponseEntity<InternalErrorResponse> handleProfileIntegrity(
+            ProfileIntegrityException exception
     ) {
         return ResponseEntity.internalServerError()
                 .body(new InternalErrorResponse(
-                        "회원 프로필 데이터 무결성 오류입니다.",
+                        exception.getMessage(),
                         null
                 ));
     }

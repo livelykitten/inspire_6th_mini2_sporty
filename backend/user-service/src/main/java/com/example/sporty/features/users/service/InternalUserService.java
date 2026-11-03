@@ -9,6 +9,7 @@ import com.example.sporty.features.users.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.example.sporty.features.commons.exception.profiles.ProfileIntegrityException;
 
 import java.util.HashSet;
 import java.util.List;
@@ -53,9 +54,7 @@ public class InternalUserService {
 
         for (var user : users) {
             if (!profileUserIds.contains(user.getId())) {
-                throw new IllegalStateException(
-                        "회원의 프로필이 누락되었습니다."
-                );
+                throw new ProfileIntegrityException();
             }
         }
 
