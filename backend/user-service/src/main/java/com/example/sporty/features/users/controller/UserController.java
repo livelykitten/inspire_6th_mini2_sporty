@@ -45,7 +45,7 @@ public class UserController {
 
         userService.withdrawal(request.get("password"));
 
-        return ResponseEntity.noContent().build();
+        return ResponseEntity.accepted().build();
     }
 
 
