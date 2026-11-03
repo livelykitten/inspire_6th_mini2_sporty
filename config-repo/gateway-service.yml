@@ -36,6 +36,6 @@ spring:
               predicates:
                 - Path=/api/ai/**
 
-# user-service 와 같은 값 (.env 의 JWT_SECRET_KEY, 32바이트 이상)
+# user-service 와 같은 값 (같은 암호문, 풀면 32바이트 이상). W-25
 jwt:
-  secret: ${JWT_SECRET_KEY}
+  secret: '{cipher}6bf811c263724af8c1af56ff3ab9b43cf843ccb3f0e3aa6d3663daab9f83644b729170f1662e44ac7528524580687aa0deb4fa2ee70da30338b706fa9636e733830c0a190c237951021c916f945c603b'

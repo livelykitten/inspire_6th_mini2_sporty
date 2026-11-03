@@ -20,7 +20,9 @@ import com.example.sporty.features.exerciseMatching.domain.dto.MatchDetailRespon
 import com.example.sporty.features.exerciseMatching.domain.dto.MatchModifyRequestDto;
 import com.example.sporty.features.exerciseMatching.domain.dto.MatchParticipantResponseDto;
 import com.example.sporty.features.exerciseMatching.domain.dto.MatchParticipantSummaryDto;
+import com.example.sporty.features.commons.exception.matches.MatchUserNotFoundException;
 import com.example.sporty.features.commons.exception.matches.ServiceNotFoundException;
+import com.example.sporty.features.commons.exception.users.UserNotFoundException;
 import com.example.sporty.features.exerciseMatching.client.MemberLookup;
 import com.example.sporty.features.exerciseMatching.client.MemberProfile;
 import com.example.sporty.features.exerciseMatching.domain.dto.MatchCreateRequestDto;
@@ -54,7 +56,11 @@ public class MatchService {
     // [EM-08] 내 매치 목록 조회
     public List<MyMatchResponseDto> getMyMatches(Long userId) {
         // 1. 로그인 회원 확인
-        memberLookup.validateActive(userId);
+        try {
+            memberLookup.validateActive(userId);
+        } catch (MatchUserNotFoundException e) {
+            throw new UserNotFoundException();
+        }
 
         // 2. 본인이 생성하거나 참여한 매치 조회
         List<MatchParticipantEntity> participants = matchParticipantRepository
@@ -199,6 +205,7 @@ public class MatchService {
 
         // Validate the catalog before creating either match or participant records.
         FacilityServiceSnapshotEntity service = facilityServiceSnapshotRepository.findById(req.getServiceId())
+            .filter(snapshot -> Boolean.TRUE.equals(snapshot.getActive()))
             .orElseThrow(ServiceNotFoundException::new);
 
         // 3. create MatchEntity and save
