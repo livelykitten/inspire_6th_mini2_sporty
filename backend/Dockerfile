@@ -21,7 +21,9 @@ COPY . .
 # Windows 에서 체크아웃한 gradlew 는 CRLF 라 리눅스에서 실행되지 않으므로 복사 뒤에 줄바꿈을 맞춘다.
 RUN sed -i 's/\r$//' gradlew && chmod +x gradlew
 
-RUN --mount=type=cache,target=/root/.gradle \
+# 캐시 마운트는 sharing=locked: 이미지를 병렬로 빌드해도 Gradle 사용자 홈(/root/.gradle)을 동시에 쓰지 않게 직렬화한다.
+# (shared 이면 캐시가 빈 상태에서 Gradle 락 경합으로 'Timeout waiting to lock journal cache' 로 실패한다)
+RUN --mount=type=cache,target=/root/.gradle,sharing=locked \
     ./gradlew :discovery-service:bootJar -x test --no-daemon \
     && cp discovery-service/build/libs/discovery-service-*-SNAPSHOT.jar /workspace/app.jar
 
@@ -53,7 +55,9 @@ COPY . .
 # Windows 에서 체크아웃한 gradlew 는 CRLF 라 리눅스에서 실행되지 않으므로 복사 뒤에 줄바꿈을 맞춘다.
 RUN sed -i 's/\r$//' gradlew && chmod +x gradlew
 
-RUN --mount=type=cache,target=/root/.gradle \
+# 캐시 마운트는 sharing=locked: 이미지를 병렬로 빌드해도 Gradle 사용자 홈(/root/.gradle)을 동시에 쓰지 않게 직렬화한다.
+# (shared 이면 캐시가 빈 상태에서 Gradle 락 경합으로 'Timeout waiting to lock journal cache' 로 실패한다)
+RUN --mount=type=cache,target=/root/.gradle,sharing=locked \
     ./gradlew :config-service:bootJar -x test --no-daemon \
     && cp config-service/build/libs/config-service-*-SNAPSHOT.jar /workspace/app.jar
 
@@ -86,7 +90,9 @@ COPY . .
 # Windows 에서 체크아웃한 gradlew 는 CRLF 라 리눅스에서 실행되지 않으므로 복사 뒤에 줄바꿈을 맞춘다.
 RUN sed -i 's/\r$//' gradlew && chmod +x gradlew
 
-RUN --mount=type=cache,target=/root/.gradle \
+# 캐시 마운트는 sharing=locked: 이미지를 병렬로 빌드해도 Gradle 사용자 홈(/root/.gradle)을 동시에 쓰지 않게 직렬화한다.
+# (shared 이면 캐시가 빈 상태에서 Gradle 락 경합으로 'Timeout waiting to lock journal cache' 로 실패한다)
+RUN --mount=type=cache,target=/root/.gradle,sharing=locked \
     ./gradlew :gateway-service:bootJar -x test --no-daemon \
     && cp gateway-service/build/libs/gateway-service-*-SNAPSHOT.jar /workspace/app.jar
 
@@ -117,7 +123,9 @@ COPY . .
 # Windows 에서 체크아웃한 gradlew 는 CRLF 라 리눅스에서 실행되지 않으므로 복사 뒤에 줄바꿈을 맞춘다.
 RUN sed -i 's/\r$//' gradlew && chmod +x gradlew
 
-RUN --mount=type=cache,target=/root/.gradle \
+# 캐시 마운트는 sharing=locked: 이미지를 병렬로 빌드해도 Gradle 사용자 홈(/root/.gradle)을 동시에 쓰지 않게 직렬화한다.
+# (shared 이면 캐시가 빈 상태에서 Gradle 락 경합으로 'Timeout waiting to lock journal cache' 로 실패한다)
+RUN --mount=type=cache,target=/root/.gradle,sharing=locked \
     ./gradlew :user-service:bootJar -x test --no-daemon \
     && cp user-service/build/libs/user-service-*-SNAPSHOT.jar /workspace/app.jar
 
@@ -148,7 +156,9 @@ COPY . .
 # Windows 에서 체크아웃한 gradlew 는 CRLF 라 리눅스에서 실행되지 않으므로 복사 뒤에 줄바꿈을 맞춘다.
 RUN sed -i 's/\r$//' gradlew && chmod +x gradlew
 
-RUN --mount=type=cache,target=/root/.gradle \
+# 캐시 마운트는 sharing=locked: 이미지를 병렬로 빌드해도 Gradle 사용자 홈(/root/.gradle)을 동시에 쓰지 않게 직렬화한다.
+# (shared 이면 캐시가 빈 상태에서 Gradle 락 경합으로 'Timeout waiting to lock journal cache' 로 실패한다)
+RUN --mount=type=cache,target=/root/.gradle,sharing=locked \
     ./gradlew :match-service:bootJar -x test --no-daemon \
     && cp match-service/build/libs/match-service-*-SNAPSHOT.jar /workspace/app.jar
 
@@ -179,7 +189,9 @@ COPY . .
 # Windows 에서 체크아웃한 gradlew 는 CRLF 라 리눅스에서 실행되지 않으므로 복사 뒤에 줄바꿈을 맞춘다.
 RUN sed -i 's/\r$//' gradlew && chmod +x gradlew
 
-RUN --mount=type=cache,target=/root/.gradle \
+# 캐시 마운트는 sharing=locked: 이미지를 병렬로 빌드해도 Gradle 사용자 홈(/root/.gradle)을 동시에 쓰지 않게 직렬화한다.
+# (shared 이면 캐시가 빈 상태에서 Gradle 락 경합으로 'Timeout waiting to lock journal cache' 로 실패한다)
+RUN --mount=type=cache,target=/root/.gradle,sharing=locked \
     ./gradlew :facility-service:bootJar -x test --no-daemon \
     && cp facility-service/build/libs/facility-service-*-SNAPSHOT.jar /workspace/app.jar
 
@@ -210,7 +222,9 @@ COPY . .
 # Windows 에서 체크아웃한 gradlew 는 CRLF 라 리눅스에서 실행되지 않으므로 복사 뒤에 줄바꿈을 맞춘다.
 RUN sed -i 's/\r$//' gradlew && chmod +x gradlew
 
-RUN --mount=type=cache,target=/root/.gradle \
+# 캐시 마운트는 sharing=locked: 이미지를 병렬로 빌드해도 Gradle 사용자 홈(/root/.gradle)을 동시에 쓰지 않게 직렬화한다.
+# (shared 이면 캐시가 빈 상태에서 Gradle 락 경합으로 'Timeout waiting to lock journal cache' 로 실패한다)
+RUN --mount=type=cache,target=/root/.gradle,sharing=locked \
     ./gradlew :ai-service:bootJar -x test --no-daemon \
     && cp ai-service/build/libs/ai-service-*-SNAPSHOT.jar /workspace/app.jar
 

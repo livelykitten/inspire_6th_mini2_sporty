@@ -48,9 +48,12 @@ q() {
 }
 
 echo "[deploy] 저장소 갱신 (${GIT_REF})"
-if [ -d .git ]; then
+if [ -d .git ] && [ -z "${DEPLOY_SELF_UPDATED:-}" ]; then
   git fetch --depth 1 origin "$GIT_REF"
   git reset --hard FETCH_HEAD
+  # 이 스크립트 자체가 바뀌었을 수 있다. 실행 중인 스크립트 파일을 덮어쓰면 위험하므로 갱신된 파일로 처음부터 다시 시작한다.
+  export DEPLOY_SELF_UPDATED=1
+  exec bash "$REPO_DIR/deploy/ec2/deploy.sh" "$cmd"
 fi
 
 echo "[deploy] Secrets Manager -> .env"
