@@ -31,10 +31,15 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
-import static org.assertj.core.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.doThrow;
 
 @DataJpaTest(properties = {
         "spring.config.import=",
@@ -138,6 +143,7 @@ class WithdrawalReceptionTest {
     void repeatedRequestDoesNotCreateAnotherSagaOrOutbox() {
         Long userId = createUser(UserStatus.ACTIVE);
         authenticate(userId);
+
         userService.withdrawal("Test1234!");
 
         String sagaId = userRepository.findById(userId)
@@ -152,6 +158,84 @@ class WithdrawalReceptionTest {
                 .orElseThrow()
                 .getWithdrawalSagaId())
                 .isEqualTo(sagaId);
+    }
+
+    @Test
+    void concurrentRequestsCreateOnlyOneSagaAndOutbox() throws Exception {
+        Long userId = createUser(UserStatus.ACTIVE);
+
+        var executor = Executors.newFixedThreadPool(2);
+        var ready = new CountDownLatch(2);
+        var start = new CountDownLatch(1);
+
+        Callable<String> request = () -> {
+            try {
+                // 인증 정보는 각 작업 스레드에 따로 설정한다.
+                authenticate(userId);
+                ready.countDown();
+
+                if (!start.await(10, TimeUnit.SECONDS)) {
+                    throw new AssertionError(
+                            "동시 요청 시작 대기 시간이 초과됐습니다."
+                    );
+                }
+
+                try {
+                    userService.withdrawal("Test1234!");
+                    return "ACCEPTED";
+                } catch (WithdrawalAlreadyPendingException exception) {
+                    return "ALREADY_PENDING";
+                }
+            } finally {
+                SecurityContextHolder.clearContext();
+            }
+        };
+
+        try {
+            var first = executor.submit(request);
+            var second = executor.submit(request);
+
+            assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+
+            assertThat(List.of(
+                    first.get(20, TimeUnit.SECONDS),
+                    second.get(20, TimeUnit.SECONDS)
+            )).containsExactlyInAnyOrder(
+                    "ACCEPTED",
+                    "ALREADY_PENDING"
+            );
+
+            var user = userRepository.findById(userId).orElseThrow();
+
+            assertThat(user.getStatus())
+                    .isEqualTo(UserStatus.WITHDRAWAL_PENDING);
+            assertThat(user.getWithdrawalSagaId()).isNotBlank();
+            assertThat(user.getWithdrawnAt()).isNull();
+
+            var outboxes = outboxRepository.findAll();
+            assertThat(outboxes).hasSize(1);
+
+            var outbox = outboxes.get(0);
+            var payload = objectMapper.readTree(outbox.getPayload());
+
+            assertThat(outbox.getStatus()).isEqualTo("PENDING");
+            assertThat(outbox.getTopic())
+                    .isEqualTo("user.withdrawal.requested");
+            assertThat(outbox.getMessageKey())
+                    .isEqualTo(userId.toString());
+
+            assertThat(payload.get("userId").asLong())
+                    .isEqualTo(userId);
+            assertThat(payload.get("sagaId").asText())
+                    .isEqualTo(user.getWithdrawalSagaId());
+            assertThat(payload.get("eventId").asText())
+                    .isEqualTo(outbox.getEventId());
+        } finally {
+            start.countDown();
+            executor.shutdownNow();
+            executor.awaitTermination(5, TimeUnit.SECONDS);
+        }
     }
 
     @Test
@@ -189,6 +273,7 @@ class WithdrawalReceptionTest {
     void matchingCompletionConfirmsWithdrawal() {
         Long userId = createUser(UserStatus.ACTIVE);
         authenticate(userId);
+
         userService.withdrawal("Test1234!");
 
         String sagaId = userRepository.findById(userId)
@@ -217,6 +302,7 @@ class WithdrawalReceptionTest {
     void oldSagaCompletionDoesNotChangeCurrentRequest() {
         Long userId = createUser(UserStatus.ACTIVE);
         authenticate(userId);
+
         userService.withdrawal("Test1234!");
 
         String currentSagaId = userRepository.findById(userId)
@@ -246,6 +332,7 @@ class WithdrawalReceptionTest {
     void duplicateCompletionDoesNotChangeWithdrawalTime() {
         Long userId = createUser(UserStatus.ACTIVE);
         authenticate(userId);
+
         userService.withdrawal("Test1234!");
 
         String sagaId = userRepository.findById(userId)
