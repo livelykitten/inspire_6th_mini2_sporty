@@ -3,6 +3,7 @@ package com.example.sporty.features.exerciseMatching.withdrawal;
 import java.time.*;
 import java.util.UUID;
 import com.example.sporty.features.exerciseMatching.service.MatchService;
+import com.example.sporty.features.exerciseMatching.repository.ProcessedEventRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;

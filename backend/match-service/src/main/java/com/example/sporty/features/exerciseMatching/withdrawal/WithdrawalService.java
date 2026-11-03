@@ -1,6 +1,7 @@
 package com.example.sporty.features.exerciseMatching.withdrawal;
 
 import com.example.sporty.features.exerciseMatching.client.UserServiceClient;
+import com.example.sporty.features.exerciseMatching.repository.ProcessedEventRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
