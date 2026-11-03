@@ -23,6 +23,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import java.net.URI;
+
+import feign.FeignException;
+import feign.Request;
 
 import com.example.sporty.features.commons.exception.ai.AiDraftException;
 import com.example.sporty.features.commons.exception.ai.AiRecommendException;
@@ -30,6 +34,38 @@ import com.example.sporty.features.commons.exception.ai.AiSearchException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    // Only transport failures and upstream 503 responses use the dependency-unavailable code.
+    @ExceptionHandler(FeignException.class)
+    public ResponseEntity<ErrorResponse> handleFeignException(FeignException e) {
+        Request request = e.request();
+        String path = request == null ? "" : URI.create(request.url()).getPath();
+        boolean getRequest = request != null && request.httpMethod() == Request.HttpMethod.GET;
+
+        if (getRequest && e.status() == 400 && "/api/matches".equals(path)) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(ErrorResponse.builder()
+                            .message("매치 검색 조건을 확인해주세요.")
+                            .build());
+        }
+        if (getRequest && e.status() == 404 && "/api/users/me".equals(path)) {
+            return handleUserNotFound(new UserNotFoundException());
+        }
+
+        if (e.status() == -1 || e.status() == 503) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(ErrorResponse.builder()
+                        .code("AI_DEPENDENCY_UNAVAILABLE")
+                        .message("잠시 후 다시 시도해주세요.")
+                        .build());
+        }
+
+        // Unspecified upstream errors are internal errors, not dependency-unavailable responses.
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(ErrorResponse.builder()
+                        .message("요청 처리 중 오류가 발생했습니다.")
+                        .build());
+    }
 
     @ExceptionHandler(MatchParticipantNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleMatchParticipantNotFound(MatchParticipantNotFoundException e) {

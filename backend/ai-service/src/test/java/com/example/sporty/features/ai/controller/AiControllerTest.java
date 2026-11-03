@@ -27,8 +27,8 @@ import com.example.sporty.features.commons.exception.ai.AiDraftException;
 import com.example.sporty.features.commons.exception.ai.AiSearchException;
 import com.example.sporty.features.commons.handler.GlobalExceptionHandler;
 import com.example.sporty.features.commons.util.SportType;
-import com.example.sporty.features.exerciseMatching.domain.enums.MatchStatus;
-import com.example.sporty.features.exerciseMatching.domain.enums.SkillLevel;
+import com.example.sporty.features.ai.client.enums.MatchStatus;
+import com.example.sporty.features.ai.client.enums.SkillLevel;
 
 /*
 - AI-01, AI-02 요청 입력값 검증 테스트

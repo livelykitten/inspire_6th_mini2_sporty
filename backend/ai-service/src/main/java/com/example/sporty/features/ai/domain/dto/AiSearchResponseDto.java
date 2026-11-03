@@ -2,7 +2,7 @@ package com.example.sporty.features.ai.domain.dto;
 
 import java.util.List;
 
-import com.example.sporty.features.exerciseMatching.domain.dto.MatchResponseDto;
+import com.example.sporty.features.ai.client.dto.MatchResponseDto;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;

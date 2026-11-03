@@ -12,7 +12,7 @@ import com.example.sporty.features.ai.domain.dto.AiDraftResponseDto;
 import com.example.sporty.features.ai.util.PromptDateTable;
 import com.example.sporty.features.ai.util.SupportedSports;
 import com.example.sporty.features.commons.exception.ai.AiDraftException;
-import com.example.sporty.features.exerciseMatching.domain.enums.GenderGroup;
+import com.example.sporty.features.ai.client.enums.GenderGroup;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
