@@ -329,18 +329,23 @@ public class FacilitySyncService {
 
     private void saveOutbox(ServiceEntity service) {
         FacilityChangedEvent event = FacilityChangedEvent.from(service);
+        String payload;
         try {
-            String payload = objectMapper.writeValueAsString(event);
-            FacilityOutbox outbox = FacilityOutbox.builder()
-                    .eventId(event.getEventId())
-                    .topic("facility.service.changed")
-                    .messageKey(String.valueOf(service.getId()))
-                    .payload(payload)
-                    .build();
-            outboxRepository.save(outbox);
+            payload = objectMapper.writeValueAsString(event);
         } catch (JsonProcessingException exception) {
-            log.warn("이벤트 직렬화에 실패했습니다: {}", service.getServiceId(), exception);
+            throw new IllegalStateException(
+                    "이벤트 직렬화에 실패했습니다: " + service.getServiceId(),
+                    exception
+            );
         }
+
+        FacilityOutbox outbox = FacilityOutbox.builder()
+                .eventId(event.getEventId())
+                .topic("facility.service.changed")
+                .messageKey(String.valueOf(service.getId()))
+                .payload(payload)
+                .build();
+        outboxRepository.save(outbox);
     }
 
     private record LocationKey(
