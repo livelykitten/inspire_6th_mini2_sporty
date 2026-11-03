@@ -24,6 +24,11 @@ import com.example.sporty.features.facilities.repository.LocationRepository;
 import com.example.sporty.features.facilities.repository.ServiceRepository;
 import com.example.sporty.features.openapi.SeoulFacilityApiClient;
 import com.example.sporty.features.openapi.domain.dto.SeoulFacilityResponseDto.Row;
+import com.example.sporty.features.facilities.repository.FacilityOutboxRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.example.sporty.features.facilities.domain.dto.FacilityChangedEvent;
+import com.example.sporty.features.facilities.domain.entity.FacilityOutbox;
+import com.fasterxml.jackson.core.JsonProcessingException;
 
 import lombok.RequiredArgsConstructor;
 
@@ -47,6 +52,8 @@ public class FacilitySyncService {
     private final SeoulFacilityApiClient apiClient;
     private final LocationRepository locationRepository;
     private final ServiceRepository serviceRepository;
+    private final FacilityOutboxRepository outboxRepository;
+    private final ObjectMapper objectMapper;
     private final TransactionTemplate transactionTemplate;
 
     public SyncResult syncAll() {
@@ -121,6 +128,7 @@ public class FacilitySyncService {
                 serviceRepository.save(service);
                 serviceCache.put(serviceId, service);
                 createdCount++;
+                saveOutbox(service);
             } else {
                 service.update(
                         location,
@@ -133,6 +141,7 @@ public class FacilitySyncService {
                         parseDateTime(row.getRcptEndDt())
                 );
                 updatedCount++;
+                saveOutbox(service);
             }
 
             seenServiceIds.add(serviceId);
@@ -144,6 +153,7 @@ public class FacilitySyncService {
                     && !seenServiceIds.contains(service.getServiceId())) {
                 service.deactivate();
                 deactivatedCount++;
+                saveOutbox(service);
             }
         }
 
@@ -312,6 +322,22 @@ public class FacilitySyncService {
             return null;
         }
         return value.trim();
+    }
+
+    private void saveOutbox(ServiceEntity service) {
+        FacilityChangedEvent event = FacilityChangedEvent.from(service);
+        try {
+            String payload = objectMapper.writeValueAsString(event);
+            FacilityOutbox outbox = FacilityOutbox.builder()
+                    .eventId(event.getEventId())
+                    .topic("facility.service.changed")
+                    .messageKey(String.valueOf(service.getId()))
+                    .payload(payload)
+                    .build();
+            outboxRepository.save(outbox);
+        } catch (JsonProcessingException exception) {
+            log.warn("이벤트 직렬화에 실패했습니다: {}", service.getServiceId(), exception);
+        }
     }
 
     private record LocationKey(
