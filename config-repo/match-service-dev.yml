@@ -1,0 +1,4 @@
+# 배포(dev 프로필) 전용. 이슈 #38. 로컬 전용 {cipher} 대신 환경변수(Secrets Manager 가 만든 값)를 쓴다.
+spring:
+  datasource:
+    password: ${DB_PASSWORD}

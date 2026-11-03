@@ -1,0 +1,88 @@
+name: load-test
+
+# k6 부하 테스트 (이슈 #44). 수동 실행. 러너(2 vCPU)에서는 스모크 · 소규모 평균 부하만 의미가 있다.
+# 스트레스 · 스파이크 · 소크는 로컬 또는 별도 부하 발생기에서 BASE_URL 을 지정해 실행한다 (EC2 앱 서버 자체에서 돌리지 않는다).
+#   base_url 이 비어 있으면 러너에서 전체 스택을 띄워 그 스택에 부하를 건다.
+# 결과: 아티팩트(tests/load/results/*.json) + Job Summary 의 점수표 (tests/load/score.py)
+# 담당: 반정욱 (@salieri009) · 작업 위치: .github/workflows/load-test.yml
+
+on:
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: "시나리오"
+        required: true
+        default: "smoke"
+        type: choice
+        options: [smoke, average, stress, spike, soak]
+      base_url:
+        description: "대상 주소 (예: http://<ALB>). 비우면 러너에서 스택을 띄운다"
+        required: false
+        default: ""
+      vus:
+        description: "동시 사용자 (average · soak)"
+        required: false
+        default: "10"
+      duration:
+        description: "유지 시간 (average · soak, 예: 3m)"
+        required: false
+        default: "2m"
+
+permissions:
+  contents: read
+
+jobs:
+  load:
+    name: k6 ${{ inputs.scenario }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      BASE_URL: ${{ inputs.base_url || 'http://localhost:8000' }}
+    steps:
+      - name: 코드 내려받기
+        uses: actions/checkout@v4
+
+      - name: k6 설치
+        uses: grafana/setup-k6-action@v1
+
+      - name: 러너에 전체 스택 기동 (base_url 이 없을 때)
+        if: ${{ inputs.base_url == '' }}
+        run: |
+          cp .env.example .env
+          docker compose -f compose.yaml -f compose.app.yaml up -d --build
+          deadline=$((SECONDS + 600))
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            bad="$(docker compose -f compose.yaml -f compose.app.yaml ps --all --format '{{.Service}} {{.State}} {{.Health}}' | awk '$1 != "kafka-init" && !($2 == "running" && $3 == "healthy")')"
+            [ -z "$bad" ] && break
+            sleep 10
+          done
+          bash tests/pipeline/fixtures.sh
+          for i in $(seq 1 30); do
+            [ "$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/api/matches")" = "200" ] && break
+            sleep 5
+          done
+
+      - name: k6 실행
+        run: |
+          mkdir -p tests/load/results
+          k6 run tests/load/k6/scenarios.js \
+            -e SCENARIO=${{ inputs.scenario }} \
+            -e BASE_URL="$BASE_URL" \
+            -e VUS=${{ inputs.vus }} \
+            -e DURATION=${{ inputs.duration }}
+
+      - name: 점수 계산
+        if: ${{ always() }}
+        run: python3 tests/load/score.py tests/load/results
+
+      - name: 결과 업로드
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: k6-results-${{ inputs.scenario }}
+          path: tests/load/results/
+          if-no-files-found: ignore
+
+      - name: 정리
+        if: ${{ always() && inputs.base_url == '' }}
+        run: docker compose -f compose.yaml -f compose.app.yaml down -v || true
