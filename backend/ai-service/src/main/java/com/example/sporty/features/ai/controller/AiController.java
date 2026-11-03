@@ -19,7 +19,7 @@ import com.example.sporty.features.ai.agent.MatchDraftAiAgent;
 import com.example.sporty.features.ai.agent.MatchRecommendAiAgent;
 import com.example.sporty.features.ai.domain.dto.AiRequestDto;
 import com.example.sporty.features.commons.handler.ErrorResponse;
-import com.example.sporty.features.exerciseMatching.domain.dto.MatchResponseDto;
+import com.example.sporty.features.ai.client.dto.MatchResponseDto;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -69,8 +69,10 @@ public class AiController {
     }
 
     // AI-03  로그인 회원의 자치구·선호 종목·성별로 추천 매치 최대 3개 (후보가 없으면 빈 배열)
+    // 헤더 인증 필터가 등록한 사용자 ID를 받는다.
     @GetMapping("/matches/recommendations")
-    public ResponseEntity<List<MatchResponseDto>> recommendMatches(@AuthenticationPrincipal Long userId) {
+    public ResponseEntity<List<MatchResponseDto>> recommendMatches(
+            @AuthenticationPrincipal Long userId) {
         System.out.println("debug >>>> ai controller recommendMatches : " + userId);
         return ResponseEntity
                 .status(HttpStatus.OK)

@@ -21,9 +21,9 @@ import com.example.sporty.features.ai.domain.dto.AiSearchConditionDto;
 import com.example.sporty.features.ai.tools.MatchAiTool;
 import com.example.sporty.features.commons.exception.ai.AiSearchException;
 import com.example.sporty.features.commons.util.SportType;
-import com.example.sporty.features.exerciseMatching.domain.enums.GenderGroup;
-import com.example.sporty.features.exerciseMatching.domain.enums.MatchStatus;
-import com.example.sporty.features.exerciseMatching.domain.enums.SkillLevel;
+import com.example.sporty.features.ai.client.enums.GenderGroup;
+import com.example.sporty.features.ai.client.enums.MatchStatus;
+import com.example.sporty.features.ai.client.enums.SkillLevel;
 
 
 /*
@@ -59,7 +59,7 @@ class MatchAiAgentTest {
                 .defaultTools(new MatchAiTool())
                 .build();
 
-        // 조건 추출만 검증하므로 MatchService는 사용하지 않는다.
+        // 조건 추출만 검증하므로 MatchClient는 사용하지 않는다.
         matchAIAgent = new MatchAiAgent(chatClient, null);
     }
 

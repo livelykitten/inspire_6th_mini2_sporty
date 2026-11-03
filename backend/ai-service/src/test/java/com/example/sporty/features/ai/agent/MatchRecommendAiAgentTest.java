@@ -1,9 +1,8 @@
 package com.example.sporty.features.ai.agent;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -24,15 +23,17 @@ import org.springframework.ai.openai.api.OpenAiApi;
 
 import com.example.sporty.features.ai.tools.MatchRecommendAiTool;
 import com.example.sporty.features.commons.util.SportType;
-import com.example.sporty.features.exerciseMatching.domain.dto.MatchResponseDto;
-import com.example.sporty.features.exerciseMatching.domain.enums.GenderGroup;
-import com.example.sporty.features.exerciseMatching.domain.enums.MatchStatus;
-import com.example.sporty.features.exerciseMatching.repository.MatchParticipantRepository;
-import com.example.sporty.features.exerciseMatching.service.MatchService;
-import com.example.sporty.features.profiles.domain.entity.District;
-import com.example.sporty.features.users.domain.dto.UserInfoResponseDto;
-import com.example.sporty.features.users.domain.entity.Gender;
-import com.example.sporty.features.users.service.UserService;
+import com.example.sporty.features.ai.client.dto.MatchResponseDto;
+import com.example.sporty.features.ai.client.enums.GenderGroup;
+import com.example.sporty.features.ai.client.enums.MatchStatus;
+import com.example.sporty.features.ai.client.enums.MatchParticipantRole;
+import com.example.sporty.features.ai.client.dto.MyMatchResponseDto;
+import com.example.sporty.features.ai.client.MatchClient;
+import com.example.sporty.features.ai.client.enums.District;
+import com.example.sporty.features.ai.client.dto.UserInfoResponseDto;
+import com.example.sporty.features.ai.client.enums.Gender;
+import com.example.sporty.features.ai.client.UserClient;
+import com.example.sporty.features.commons.exception.ai.AiRecommendException;
 
 /*
 - AI-03 매치 추천 테스트 (테스트 케이스 명세 AI-005 ~ AI-007)
@@ -48,13 +49,10 @@ class MatchRecommendAiAgentTest {
     private static final LocalDateTime BASE = LocalDateTime.now().plusDays(7).withNano(0);
 
     @Mock
-    private UserService userService;
+    private UserClient userClient;
 
     @Mock
-    private MatchService matchService;
-
-    @Mock
-    private MatchParticipantRepository matchParticipantRepository;
+    private MatchClient matchClient;
 
     @Mock
     private ChatClient chatClient;
@@ -63,7 +61,7 @@ class MatchRecommendAiAgentTest {
 
     @BeforeEach
     void setUp() {
-        agent = new MatchRecommendAiAgent(chatClient, userService, matchService, matchParticipantRepository);
+        agent = new MatchRecommendAiAgent(chatClient, userClient, matchClient);
     }
 
     private UserInfoResponseDto me(Gender gender, District district, List<SportType> sports) {
@@ -100,15 +98,15 @@ class MatchRecommendAiAgentTest {
     @DisplayName("[TC-AI03-01] AI가 회원 정보로 추천 매치 3개를 고르고, 종목과 자치구가 모두 맞는 매치를 먼저 추천한다")
     void recommendsThreeMatchesWithAi() {
         MatchRecommendAiAgent aiAgent = new MatchRecommendAiAgent(
-                openAiChatClient(), userService, matchService, matchParticipantRepository);
+                openAiChatClient(), userClient, matchClient);
 
-        when(userService.getMyInfo(1L)).thenReturn(me(Gender.FEMALE, District.GANGNAM, List.of(SportType.FUTSAL)));
-        when(matchService.searchMatches(any())).thenReturn(List.of(
+        when(userClient.getMyInfo(1L)).thenReturn(me(Gender.FEMALE, District.GANGNAM, List.of(SportType.FUTSAL)));
+        when(matchClient.searchMatches(any())).thenReturn(List.of(
                 match(1, SportType.FUTSAL, "마포구", GenderGroup.MIXED, 1),      // 종목
                 match(2, SportType.BASKETBALL, "강남구", GenderGroup.MIXED, 2),  // 자치구
                 match(3, SportType.FUTSAL, "강남구", GenderGroup.MIXED, 3),      // 종목 + 자치구
                 match(4, SportType.TENNIS, "송파구", GenderGroup.MIXED, 4)));    // 둘 다 아님 → 후보 아님
-        when(matchParticipantRepository.existsByMatch_IdAndUserId(anyLong(), eq(1L))).thenReturn(false);
+        when(matchClient.getMyMatches(1L)).thenReturn(List.of());
 
         List<MatchResponseDto> result = aiAgent.recommend(1L);
 
@@ -149,10 +147,44 @@ class MatchRecommendAiAgentTest {
     }
 
     @Test
+    @DisplayName("OpenAI 호출 실패는 지정된 추천 실패 예외로 변환한다")
+    void wrapsOpenAiFailureWithRecommendMessage() {
+        when(userClient.getMyInfo(7L))
+                .thenReturn(me(Gender.MALE, District.GANGNAM, List.of(SportType.FUTSAL)));
+        when(matchClient.searchMatches(any())).thenReturn(List.of(
+                match(103, SportType.FUTSAL, "강남구", GenderGroup.MIXED, 1)));
+        when(matchClient.getMyMatches(7L)).thenReturn(List.of());
+        RuntimeException failure = new IllegalStateException("OpenAI unavailable");
+        when(chatClient.prompt()).thenThrow(failure);
+
+        assertThatThrownBy(() -> agent.recommend(7L))
+                .isInstanceOf(AiRecommendException.class)
+                .hasMessage("추천 매치를 만들지 못했습니다. 잠시 후 다시 시도해주세요.")
+                .hasCause(failure);
+    }
+
+    @Test
+    @DisplayName("내가 개설하거나 참가한 매치만 있으면 AI 호출 없이 빈 목록을 반환한다")
+    void excludesOwnedAndJoinedMatchesWithoutAi() {
+        when(userClient.getMyInfo(7L))
+                .thenReturn(me(Gender.MALE, District.GANGNAM, List.of(SportType.FUTSAL)));
+        when(matchClient.searchMatches(any())).thenReturn(List.of(
+                match(101, SportType.FUTSAL, "강남구", GenderGroup.MIXED, 1),
+                match(102, SportType.FUTSAL, "강남구", GenderGroup.MIXED, 2)));
+        when(matchClient.getMyMatches(7L)).thenReturn(List.of(
+                MyMatchResponseDto.builder().matchId(101L).role(MatchParticipantRole.PARTICIPANT).build(),
+                MyMatchResponseDto.builder().matchId(102L).role(MatchParticipantRole.OWNER).build()));
+
+        assertThat(agent.recommend(7L)).isEmpty();
+        verifyNoInteractions(chatClient);
+    }
+
+    @Test
     @DisplayName("[TC-AI03-04] 추천할 매치가 없으면 AI를 호출하지 않고 빈 목록을 반환한다")
     void returnsEmptyWithoutAiWhenNoCandidate() {
-        when(userService.getMyInfo(1L)).thenReturn(me(Gender.MALE, District.GANGNAM, List.of(SportType.FUTSAL)));
-        when(matchService.searchMatches(any())).thenReturn(List.of(
+        when(matchClient.getMyMatches(1L)).thenReturn(List.of());
+        when(userClient.getMyInfo(1L)).thenReturn(me(Gender.MALE, District.GANGNAM, List.of(SportType.FUTSAL)));
+        when(matchClient.searchMatches(any())).thenReturn(List.of(
                 match(1, SportType.TENNIS, "마포구", GenderGroup.MIXED, 1)));
 
         assertThat(agent.recommend(1L)).isEmpty();

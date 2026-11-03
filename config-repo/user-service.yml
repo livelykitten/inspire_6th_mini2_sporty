@@ -1,0 +1,20 @@
+# user-service 설정 (W-24). 비밀값은 ${환경변수} 로만 두고 값은 각자 .env (로컬) 에 있다
+spring:
+  datasource:
+    driver-class-name: ${DB_DRIVER:org.mariadb.jdbc.Driver}
+    url: ${DB_URL:jdbc:mariadb://localhost:3306/user_db}
+    username: ${DB_USERNAME:user_svc}
+    password: ${DB_PASSWORD:user_svc}
+  jpa:
+    hibernate:
+      ddl-auto: update
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: 6379
+
+# gateway-service 와 같은 값 (.env 의 JWT_SECRET_KEY)
+jwt:
+  secret: ${JWT_SECRET_KEY}

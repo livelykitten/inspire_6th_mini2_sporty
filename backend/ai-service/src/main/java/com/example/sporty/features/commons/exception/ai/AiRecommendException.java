@@ -9,4 +9,8 @@ public class AiRecommendException extends RuntimeException {
     public AiRecommendException(String message) {
         super(message);
     }
+
+    public AiRecommendException(String message, Throwable cause) {
+        super(message, cause);
+    }
 }

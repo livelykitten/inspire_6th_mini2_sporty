@@ -1,0 +1,5 @@
+# ai-service 설정 (W-24). OpenAI 키는 .env 의 OPEN_AI_KEY
+spring:
+  ai:
+    openai:
+      api-key: ${OPEN_AI_KEY:}
