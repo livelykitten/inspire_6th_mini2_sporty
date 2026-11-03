@@ -58,4 +58,25 @@ class FacilityServiceChangedListenerTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Invalid facility.service.changed payload");
     }
+
+    @Test
+    void rejectsPayloadWithMissingRequiredFieldSoKafkaErrorHandlingCanProcessIt() {
+        String payload = """
+                {
+                  "eventId": "event-1",
+                  "occurredAt": null,
+                  "serviceId": 101,
+                  "name": "테스트 풋살장",
+                  "locationName": "테스트 체육시설",
+                  "region": "강남구",
+                  "isFree": true,
+                  "reservationDeadlineAt": null,
+                  "active": true
+                }
+                """;
+
+        assertThatThrownBy(() -> listener.consume(payload))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Missing required facility.service.changed field");
+    }
 }
