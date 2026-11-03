@@ -51,6 +51,13 @@ class WithdrawalListenerTest {
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("retain original offset");
     }
 
+    @Test
+    void failureInjectionIsDisabledByDefaultAndThrowsWhenEnabled() {
+        new WithdrawalCleanupHook(false).afterCleanup(event());
+        assertThatThrownBy(() -> new WithdrawalCleanupHook(true).afterCleanup(event()))
+                .hasMessage("Injected withdrawal cleanup failure");
+    }
+
     WithdrawalRequestedEvent event() {
         return new WithdrawalRequestedEvent(UUID.randomUUID().toString(), LocalDateTime.now().withNano(0),
                 UUID.randomUUID().toString(), 7L);

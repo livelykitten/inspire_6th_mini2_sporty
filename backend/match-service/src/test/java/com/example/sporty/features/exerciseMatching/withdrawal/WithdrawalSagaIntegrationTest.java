@@ -38,7 +38,7 @@ import org.springframework.transaction.support.*;
 })
 @Import({MatchService.class, MatchUserGuardService.class, WithdrawalService.class,
         WithdrawalTransactionService.class, WithdrawalCleanupHook.class, MatchOutboxSender.class,
-        WithdrawalSagaIntegrationTest.JsonConfig.class})
+        WithdrawalFailureService.class, WithdrawalSagaIntegrationTest.JsonConfig.class})
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class WithdrawalSagaIntegrationTest {
     @org.springframework.boot.test.context.TestConfiguration(proxyBeanMethods = false)
@@ -55,6 +55,7 @@ class WithdrawalSagaIntegrationTest {
     @MockitoSpyBean ProcessedEventRepository processed;
     @Autowired MatchOutboxRepository outbox;
     @Autowired MatchOutboxSender sender;
+    @Autowired WithdrawalFailureService failures;
     @Autowired PlatformTransactionManager transactionManager;
     @Autowired ObjectMapper mapper;
     @Autowired jakarta.persistence.EntityManager entityManager;
@@ -287,6 +288,13 @@ class WithdrawalSagaIntegrationTest {
         assertThat(sent.getPayload()).isEqualTo(before.getPayload());
         assertThat(sender.publishNext()).isFalse();
         verify(kafka, times(2)).send(before.getTopic(), "7", before.getPayload());
+    }
+
+    @Test
+    void unfinishedCompensationThrowsRatherThanReportingSuccess() {
+        assertThatThrownBy(() -> failures.recordFailure(event, new IllegalStateException("failure")))
+                .isInstanceOf(UnsupportedOperationException.class);
+        assertUnchanged();
     }
 
     void assertUnchanged() {

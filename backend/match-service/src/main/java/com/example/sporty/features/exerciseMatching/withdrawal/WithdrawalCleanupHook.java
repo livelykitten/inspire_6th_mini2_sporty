@@ -1,11 +1,18 @@
 package com.example.sporty.features.exerciseMatching.withdrawal;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-/** Extension point inside the cleanup transaction. W-32 adds configurable failure injection. */
+/** W-32 failure-injection seam, invoked inside the cleanup transaction. */
 @Component
 public class WithdrawalCleanupHook {
+    private final boolean failCleanup;
+
+    public WithdrawalCleanupHook(@Value("${saga.fail-cleanup:false}") boolean failCleanup) {
+        this.failCleanup = failCleanup;
+    }
+
     public void afterCleanup(WithdrawalRequestedEvent event) {
-        // Normal W-22 processing intentionally does nothing here.
+        if (failCleanup) throw new IllegalStateException("Injected withdrawal cleanup failure");
     }
 }
