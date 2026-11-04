@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RefreshScope
 public class ConfigCheckController {
 
-    @Value("${sporty.config-check}")
+    @Value("${sporty.config-check:}")
     private String configCheck;
 
     @GetMapping("/config-check")
