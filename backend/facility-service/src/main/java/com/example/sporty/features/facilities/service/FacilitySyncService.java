@@ -11,6 +11,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 import org.slf4j.Logger;
@@ -57,6 +58,10 @@ public class FacilitySyncService {
     private final TransactionTemplate transactionTemplate;
 
     public SyncResult syncAll() {
+        return syncAll(false);
+    }
+
+    public SyncResult syncAll(boolean publishAll) {
         List<Row> rows = apiClient.fetchAll();
         if (rows.isEmpty()) {
             throw new IllegalStateException(
@@ -65,7 +70,7 @@ public class FacilitySyncService {
         }
 
         SyncResult result = transactionTemplate.execute(
-                status -> synchronize(rows)
+                status -> synchronize(rows, publishAll)
         );
 
         if (result == null) {
@@ -83,7 +88,7 @@ public class FacilitySyncService {
         return result;
     }
 
-    private SyncResult synchronize(List<Row> rows) {
+    private SyncResult synchronize(List<Row> rows, boolean publishAll) {
         Map<LocationKey, LocationEntity> locationCache = loadLocationCache();
         Map<String, ServiceEntity> serviceCache = loadServiceCache();
         Set<String> seenServiceIds = new HashSet<>();
@@ -130,18 +135,20 @@ public class FacilitySyncService {
                 createdCount++;
                 saveOutbox(service);
             } else {
-                service.update(
-                        location,
-                        serviceName,
-                        trimToNull(row.getSvcStatNm()),
-                        parseTime(row.getVMin(), false),
-                        parseTime(row.getVMax(), true),
-                        parseIsFree(row.getPayAtNm()),
-                        trimToNull(row.getSvcUrl()),
-                        parseDateTime(row.getRcptEndDt())
-                );
+                String status = trimToNull(row.getSvcStatNm());
+                LocalTime startTime = parseTime(row.getVMin(), false);
+                LocalTime endTime = parseTime(row.getVMax(), true);
+                Boolean isFree = parseIsFree(row.getPayAtNm());
+                String url = trimToNull(row.getSvcUrl());
+                LocalDateTime reservationDeadlineAt = parseDateTime(row.getRcptEndDt());
+
+                boolean changed = isChanged(service, location, serviceName, status, startTime, endTime, isFree, url, reservationDeadlineAt);
+
+                service.update(location, serviceName, status, startTime, endTime, isFree, url, reservationDeadlineAt);
                 updatedCount++;
-                saveOutbox(service);
+                if (changed || publishAll) {
+                    saveOutbox(service);
+                }
             }
 
             seenServiceIds.add(serviceId);
@@ -362,5 +369,27 @@ public class FacilitySyncService {
             int deactivatedCount,
             int skippedCount
     ) {
+    }
+
+    private boolean isChanged(
+            ServiceEntity service,
+            LocationEntity location,
+            String name,
+            String status,
+            LocalTime startTime,
+            LocalTime endTime,
+            Boolean isFree,
+            String url,
+            LocalDateTime reservationDeadlineAt
+    ) {
+        return !service.isActive()
+                || !Objects.equals(service.getLocation().getId(), location.getId())
+                || !Objects.equals(service.getName(), name)
+                || !Objects.equals(service.getStatus(), status)
+                || !Objects.equals(service.getStartTime(), startTime)
+                || !Objects.equals(service.getEndTime(), endTime)
+                || !Objects.equals(service.getIsFree(), isFree)
+                || !Objects.equals(service.getUrl(), url)
+                || !Objects.equals(service.getReservationDeadlineAt(), reservationDeadlineAt);
     }
 }

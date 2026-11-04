@@ -1,0 +1,8 @@
+# 운영(prod 프로필) 전용. 비밀값은 dev 와 같이 환경변수(Secrets Manager 가 만든 값)를 쓴다 (#38).
+spring:
+  datasource:
+    password: ${DB_PASSWORD}
+  jpa:
+    hibernate:
+      # 운영 DB 테이블은 자동으로 바꾸지 않고, 엔티티와 맞는지만 기동할 때 확인한다 (안 맞으면 기동 실패)
+      ddl-auto: validate

@@ -8,6 +8,19 @@ Config 서버(`config-service`, 8888)가 서비스에 나눠 주는 설정 파�
 | `gateway-service.yml` | 게이트웨이 (라우트 · CORS · jwt.secret) |
 | `user-service.yml` · `match-service.yml` · `facility-service.yml` · `ai-service.yml` | 각 서비스 (`spring.application.name` 과 같은 이름) |
 | `{서비스}-dev.yml` | 배포(dev 프로필)에서만, 비밀값은 `${환경변수}` (Secrets Manager) |
+| `application-prod.yml` · `{서비스}-prod.yml` | 운영(prod 프로필)에서만. 지금 운영 서버는 없다 (아래 프로필) |
+
+## 프로필 (요구사항 MSA-04: local · dev · prod)
+서비스를 띄울 때 `SPRING_PROFILES_ACTIVE` 로 고른다. 프로필 파일이 기본 파일보다 우선한다.
+
+| 프로필 | 어디서 | 받는 파일 | 기본 파일과 다른 점 |
+|---|---|---|---|
+| local (지정 안 함) | 각자 PC (IDE · Compose) | `application.yml` · `{서비스}.yml` | 기준 값. 비밀값은 `{cipher}` |
+| dev | AWS 배포 (`compose.aws.yaml`) | + `{서비스}-dev.yml` | 비밀값을 환경변수로 |
+| prod | 운영 (이번 프로젝트에는 서버 없음) | + `application-prod.yml` · `{서비스}-prod.yml` | 비밀값을 환경변수로, DB 테이블 자동 변경 대신 검증(`ddl-auto: validate`), 추적 표본 10%, 매치 Feign DEBUG 로그 끔, 게이트웨이 CORS 기본값(localhost:3000) 없음 |
+
+- 확인: `GET http://localhost:8888/{서비스}/prod` 응답의 `propertySources` 맨 앞에 `-prod.yml` 이 온다.
+- prod 는 테이블을 만들지 않으므로, 빈 DB 에 바로 prod 로 띄우면 기동에 실패한다 (테이블을 먼저 만들어 둔다).
 
 ## 서비스 쪽 application.yml 과의 관계
 - 같은 키가 둘 다 있으면 **Config 서버 값이 이긴다**. 서비스 쪽 값은 Config 서버가 꺼져 있을 때 쓰는 기본값으로 남겨 둔다.

@@ -1,0 +1,14 @@
+# 운영(prod 프로필) 전용. JWT 키는 dev 와 같이 환경변수(user-service 와 같은 값)를 쓴다 (#38).
+jwt:
+  secret: ${JWT_SECRET_KEY}
+
+spring:
+  cloud:
+    gateway:
+      server:
+        webflux:
+          globalcors:
+            cors-configurations:
+              '[/**]':
+                # 운영은 개발용 기본값(localhost:3000)을 허용하지 않게 뺀다. 값이 없으면 기동은 되지만 모든 오리진이 403 이다
+                allowed-origins: ${CORS_ALLOWED_ORIGIN}
