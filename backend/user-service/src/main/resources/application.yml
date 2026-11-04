@@ -6,8 +6,9 @@ spring:
     name: user-service
   config:
     import:
-      - "optional:file:./.env[.properties]"
+      # 공통 backend/.env 를 먼저, 서비스 폴더 .env 를 나중에 읽어 서비스별 값이 이긴다 (나중 import 가 우선, #61)
       - "optional:file:../.env[.properties]"
+      - "optional:file:./.env[.properties]"
       - "optional:configserver:"
   datasource:
     driver-class-name: ${DB_DRIVER:org.mariadb.jdbc.Driver}
