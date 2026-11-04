@@ -73,6 +73,44 @@ g3_event_updates_match_snapshot() {
   expect_eq "$name" "$(jget .serviceName)" "이벤트가 매치 상세의 시설 이름에 반영"
 }
 
+g4_duplicate_event_is_ignored() {
+  need_docker || return
+  local eid sid name occurred payload before after logs i
+  eid="$(new_uuid)"
+  sid=$((9900000 + RANDOM))
+  name="g4-duplicate-${RANDOM}"
+  occurred="$(tomorrow_ts)"
+  payload="$(printf '{\"eventId\":\"%s\",\"occurredAt\":\"%s\",\"serviceId\":%s,\"name\":\"%s\",\"locationName\":\"Duplicate Gym\",\"region\":\"Gangnam\",\"isFree\":true,\"reservationDeadlineAt\":null,\"active\":true}' "$eid" "$occurred" "$sid" "$name")"
+
+  printf '%s:%s\n' "$sid" "$payload" | compose exec -T kafka sh -c \
+    "$KAFKA_BIN/kafka-console-producer.sh --bootstrap-server kafka:29092 --topic $EVENT_TOPIC --property parse.key=true --property key.separator=:" >/dev/null 2>&1
+
+  before=""
+  for i in $(seq 1 20); do
+    before="$(db_query match-db match_svc match_db "SELECT CONCAT_WS('|', name, location_name, region, is_free, active, source_updated_at) FROM facility_service_snapshot WHERE service_id=$sid")"
+    [ -n "$before" ] && break
+    sleep 2
+  done
+  [ -n "$before" ] || { fail "첫 이벤트의 시설 스냅샷 반영 실패 (eventId=$eid)"; return; }
+
+  printf '%s:%s\n' "$sid" "$payload" | compose exec -T kafka sh -c \
+    "$KAFKA_BIN/kafka-console-producer.sh --bootstrap-server kafka:29092 --topic $EVENT_TOPIC --property parse.key=true --property key.separator=:" >/dev/null 2>&1
+
+  logs=""
+  for i in $(seq 1 20); do
+    logs="$(compose logs --since 2m match-service 2>&1)"
+    printf '%s' "$logs" | grep -F "[KAFKA] duplicate ignored" | grep -F "$eid" >/dev/null && break
+    sleep 2
+  done
+  printf '%s' "$logs" | grep -F "[KAFKA] duplicate ignored" | grep -F "$eid" >/dev/null \
+    || fail "중복 무시 로그 없음 (eventId=$eid)"
+
+  after="$(db_query match-db match_svc match_db "SELECT CONCAT_WS('|', name, location_name, region, is_free, active, source_updated_at) FROM facility_service_snapshot WHERE service_id=$sid")"
+  expect_eq "$before" "$after" "중복 이벤트 뒤 시설 스냅샷 값 불변"
+  expect_eq 1 "$(db_query match-db match_svc match_db "SELECT COUNT(*) FROM processed_event WHERE event_id='$eid'")" "중복 eventId processed_event 1행"
+}
+
 tc 2 "MSA-06"        "토픽 4개 + DLT 토픽 존재"                              g1_topics_exist
 tc 4 "TC-24 MSA-10"  "Kafka 중지 중 outbox PENDING → 재기동 뒤 SENT · 스냅샷 반영" g2_outbox_survives_kafka_outage  "W-18"
 tc 4 "TC-24 EV-01"   "시설 변경 이벤트 수신 → 매치 시설 스냅샷 반영"          g3_event_updates_match_snapshot "W-19"
+tc 0 "W-38 EV-01 보완" "동일 eventId 재전달 → 중복 로그 + 스냅샷 값 불변"       g4_duplicate_event_is_ignored "W-31"
