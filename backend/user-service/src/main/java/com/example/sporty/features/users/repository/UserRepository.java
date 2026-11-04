@@ -56,4 +56,21 @@ public interface UserRepository extends JpaRepository<UserEntity, Long> {
             @Param("pendingStatus") UserStatus pendingStatus,
             @Param("withdrawnStatus") UserStatus withdrawnStatus
     );
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            update UserEntity u
+            set u.status = :activeStatus,
+                u.withdrawalSagaId = null,
+                u.updatedAt = CURRENT_TIMESTAMP
+            where u.id = :userId
+              and u.status = :pendingStatus
+              and u.withdrawalSagaId = :sagaId
+            """)
+    int compensateWithdrawal(
+            @Param("userId") Long userId,
+            @Param("sagaId") String sagaId,
+            @Param("pendingStatus") UserStatus pendingStatus,
+            @Param("activeStatus") UserStatus activeStatus
+    );
 }
