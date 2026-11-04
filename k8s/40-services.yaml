@@ -1,0 +1,149 @@
+# 업무 서비스 4개: user · match · facility · ai. 환경변수는 compose.app.yaml 과 같은 값.
+# 서비스끼리 호출은 Eureka(lb://) 를 쓰므로 Service 는 헬스 확인 · initContainer 대기용이다.
+# 대기 조건: Config 응답 + 자기 DB · Kafka 포트가 열릴 때까지.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: user-service, namespace: sporty, labels: { app: user-service, tier: app } }
+spec:
+  replicas: 1
+  # outbox 발행기(@Scheduled)가 서비스 안에 있어 두 파드가 겹치면 발행기가 둘이 된다. 옛 파드를 먼저 내린다
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app: user-service } }
+  template:
+    metadata: { labels: { app: user-service, tier: app } }
+    spec:
+      enableServiceLinks: false
+      initContainers:
+        - name: wait-deps
+          image: busybox:1.36
+          command: ["sh", "-c", "until wget -q -O /dev/null http://config-service:8888/actuator/health && nc -z -w 2 user-db 3306 && nc -z -w 2 redis 6379 && nc -z -w 2 kafka 29092; do echo 'config · user-db · redis · kafka 대기'; sleep 3; done"]
+      containers:
+        - name: app
+          image: sporty/user-service:local
+          imagePullPolicy: Never
+          envFrom: [{ configMapRef: { name: sporty-app-env } }]
+          env:
+            - { name: DB_URL, value: "jdbc:mariadb://user-db:3306/user_db" }
+            - { name: DB_USERNAME, value: user_svc }
+            - { name: DB_PASSWORD, value: user_svc }
+            - { name: REDIS_HOST, value: redis }
+            - { name: JWT_SECRET_KEY, valueFrom: { secretKeyRef: { name: sporty-secrets, key: JWT_SECRET_KEY } } }
+          ports: [{ containerPort: 8001 }]
+          startupProbe: { httpGet: { path: /actuator/health, port: 8001 }, periodSeconds: 10, failureThreshold: 30 }
+          readinessProbe: { httpGet: { path: /actuator/health, port: 8001 }, periodSeconds: 10 }
+          resources: { requests: { memory: 384Mi }, limits: { memory: 768Mi } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: user-service, namespace: sporty }
+spec: { selector: { app: user-service }, ports: [{ port: 8001, targetPort: 8001 }] }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: match-service, namespace: sporty, labels: { app: match-service, tier: app } }
+spec:
+  replicas: 1
+  # outbox 발행기(@Scheduled)가 서비스 안에 있어 두 파드가 겹치면 발행기가 둘이 된다. 옛 파드를 먼저 내린다
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app: match-service } }
+  template:
+    metadata: { labels: { app: match-service, tier: app } }
+    spec:
+      enableServiceLinks: false
+      initContainers:
+        - name: wait-deps
+          image: busybox:1.36
+          command: ["sh", "-c", "until wget -q -O /dev/null http://config-service:8888/actuator/health && nc -z -w 2 match-db 3306 && nc -z -w 2 kafka 29092; do echo 'config · match-db · kafka 대기'; sleep 3; done"]
+      containers:
+        - name: app
+          image: sporty/match-service:local
+          imagePullPolicy: Never
+          envFrom: [{ configMapRef: { name: sporty-app-env } }]
+          env:
+            - { name: DB_URL, value: "jdbc:mariadb://match-db:3306/match_db" }
+            - { name: DB_USERNAME, value: match_svc }
+            - { name: DB_PASSWORD, value: match_svc }
+            # 탈퇴 Saga 실패 시연 스위치 (켜기: kubectl -n sporty set env deploy/match-service SAGA_FAIL_CLEANUP=true)
+            - { name: SAGA_FAIL_CLEANUP, value: "false" }
+          ports: [{ containerPort: 8002 }]
+          startupProbe: { httpGet: { path: /actuator/health, port: 8002 }, periodSeconds: 10, failureThreshold: 30 }
+          readinessProbe: { httpGet: { path: /actuator/health, port: 8002 }, periodSeconds: 10 }
+          resources: { requests: { memory: 384Mi }, limits: { memory: 768Mi } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: match-service, namespace: sporty }
+spec: { selector: { app: match-service }, ports: [{ port: 8002, targetPort: 8002 }] }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: facility-service, namespace: sporty, labels: { app: facility-service, tier: app } }
+spec:
+  replicas: 1
+  # outbox 발행기(@Scheduled)가 서비스 안에 있어 두 파드가 겹치면 발행기가 둘이 된다. 옛 파드를 먼저 내린다
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app: facility-service } }
+  template:
+    metadata: { labels: { app: facility-service, tier: app } }
+    spec:
+      enableServiceLinks: false
+      initContainers:
+        - name: wait-deps
+          image: busybox:1.36
+          command: ["sh", "-c", "until wget -q -O /dev/null http://config-service:8888/actuator/health && nc -z -w 2 facility-db 3306 && nc -z -w 2 kafka 29092; do echo 'config · facility-db · kafka 대기'; sleep 3; done"]
+      containers:
+        - name: app
+          image: sporty/facility-service:local
+          imagePullPolicy: Never
+          envFrom: [{ configMapRef: { name: sporty-app-env } }]
+          env:
+            - { name: DB_URL, value: "jdbc:mariadb://facility-db:3306/facility_db" }
+            - { name: DB_USERNAME, value: facility_svc }
+            - { name: DB_PASSWORD, value: facility_svc }
+            # 키가 없으면 기동 시 동기화만 실패하고 서비스는 뜬다 (compose 와 같음)
+            # optional: up.sh 는 .env 에 값이 있을 때만 Secret 에 넣는다. 빈 값을 넣으면 코드 기본값을 덮어 동기화가 실패한다
+            - { name: FACILITY_SYNC_ON_STARTUP, value: "true" }
+            - { name: PUBLIC_DATA_API_KEY, valueFrom: { secretKeyRef: { name: sporty-secrets, key: PUBLIC_DATA_API_KEY, optional: true } } }
+            - { name: PUBLIC_DATA_API_URL, valueFrom: { secretKeyRef: { name: sporty-secrets, key: PUBLIC_DATA_API_URL, optional: true } } }
+          ports: [{ containerPort: 8003 }]
+          startupProbe: { httpGet: { path: /actuator/health, port: 8003 }, periodSeconds: 10, failureThreshold: 30 }
+          readinessProbe: { httpGet: { path: /actuator/health, port: 8003 }, periodSeconds: 10 }
+          resources: { requests: { memory: 384Mi }, limits: { memory: 768Mi } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: facility-service, namespace: sporty }
+spec: { selector: { app: facility-service }, ports: [{ port: 8003, targetPort: 8003 }] }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: ai-service, namespace: sporty, labels: { app: ai-service, tier: app } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: ai-service } }
+  template:
+    metadata: { labels: { app: ai-service, tier: app } }
+    spec:
+      enableServiceLinks: false
+      initContainers:
+        - name: wait-deps
+          image: busybox:1.36
+          command: ["sh", "-c", "until wget -q -O /dev/null http://config-service:8888/actuator/health; do echo 'config 대기'; sleep 3; done"]
+      containers:
+        - name: app
+          image: sporty/ai-service:local
+          imagePullPolicy: Never
+          envFrom: [{ configMapRef: { name: sporty-app-env } }]
+          env:
+            # .env 에 키가 없으면 up.sh 가 더미 값을 넣는다 (서비스는 뜨고 AI 호출만 실패, compose 와 같음)
+            - { name: OPEN_AI_KEY, valueFrom: { secretKeyRef: { name: sporty-secrets, key: OPEN_AI_KEY } } }
+          ports: [{ containerPort: 8004 }]
+          startupProbe: { httpGet: { path: /actuator/health, port: 8004 }, periodSeconds: 10, failureThreshold: 30 }
+          readinessProbe: { httpGet: { path: /actuator/health, port: 8004 }, periodSeconds: 10 }
+          resources: { requests: { memory: 384Mi }, limits: { memory: 768Mi } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: ai-service, namespace: sporty }
+spec: { selector: { app: ai-service }, ports: [{ port: 8004, targetPort: 8004 }] }

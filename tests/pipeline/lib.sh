@@ -155,6 +155,25 @@ wait_gateway_ok() { # 최대초
   done
 }
 
+# 게이트웨이 경유 /api/matches 가 연속으로 200 인 시간이 안정초를 넘을 때까지 대기.
+# match 재기동 직후에는 첫 200 뒤에도 게이트웨이 LoadBalancer 캐시(기본 TTL 35초)가 갱신될 때 인스턴스 목록이
+# 잠깐 비어 "No servers available" 503 이 날 수 있다 (CI msa-tests 41772569367 의 TC-23). 그래서 TTL 보다 길게 본다.
+wait_gateway_stable() { # [안정초 40] [최대초 150]
+  local need="${1:-40}" limit="${2:-150}" t0 ok_since=""
+  t0=$(date +%s)
+  while [ $(( $(date +%s) - t0 )) -lt "$limit" ]; do
+    req GET /api/matches
+    if [ "$HTTP_CODE" = "200" ]; then
+      [ -z "$ok_since" ] && ok_since=$(date +%s)
+      [ $(( $(date +%s) - ok_since )) -ge "$need" ] && return 0
+    else
+      ok_since=""
+    fi
+    sleep 3
+  done
+  return 1
+}
+
 # 회원 서비스 라우트 복구 대기: 로그인 요청이 400/401(서비스가 응답)이 될 때까지. 503 이면 아직 라우팅 불가.
 wait_user_route() { # [최대초]
   local limit="${1:-120}" t0

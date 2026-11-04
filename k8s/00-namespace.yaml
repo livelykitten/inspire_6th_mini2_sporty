@@ -1,0 +1,7 @@
+# Sporty 로컬 Kubernetes 배포 (선택 요구사항 3 · WBS W-50)
+# 대상 = Docker Desktop 내장 Kubernetes(kubeadm). 이미지는 compose 로 로컬 빌드한 sporty/*:local 을 그대로 쓴다.
+# 순서와 실행 방법 = k8s/README.md
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sporty
