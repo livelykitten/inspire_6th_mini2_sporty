@@ -1,0 +1,27 @@
+server:
+  port: 8000
+
+# 라우트 · CORS · jwt.secret 은 Config 서버(config-repo/gateway-service.yml)에서 받는다 (W-24).
+# Config 서버가 없으면 라우트가 0개라 모든 요청이 404 인데 헬스체크는 200 이라 고장이 안 보인다.
+# 그래서 게이트웨이만 optional: 을 빼서 Config 서버가 없으면 기동 실패하게 한다 (#29 리뷰). config-service 를 먼저 띄운다
+spring:
+  application:
+    name: gateway-service
+  config:
+    import:
+      # 공통 backend/.env 를 먼저, 서비스 폴더 .env 를 나중에 읽어 서비스별 값이 이긴다 (나중 import 가 우선, #61)
+      - "optional:file:../.env[.properties]"
+      - "optional:file:./.env[.properties]"
+      - "configserver:"
+
+eureka:
+  client:
+    enabled: ${EUREKA_ENABLED:true}
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

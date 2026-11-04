@@ -1,0 +1,50 @@
+server:
+  port: 8888
+
+spring:
+  application:
+    name: config-service
+  config:
+    import:
+      # 공통 backend/.env 를 먼저, 서비스 폴더 .env 를 나중에 읽어 서비스별 값이 이긴다 (나중 import 가 우선, #61)
+      - "optional:file:../.env[.properties]"
+      - "optional:file:./.env[.properties]"
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+  profiles:
+    active: native
+  cloud:
+    config:
+      server:
+        native:
+          search-locations: ${CONFIG_REPO_PATH:file:../../config-repo}
+    stream:
+      kafka:
+        binder:
+          brokers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+
+# W-25 설정 암호화: config-repo 의 '{cipher}...' 값을 이 키로 풀어서 서비스에 넘긴다.
+# 키는 .env 의 ENCRYPT_KEY (로컬 = .env.example 값, 배포 = 서버 .env · 디코 DM). 비어 있으면 암호화 기능이 꺼진다
+encrypt:
+  key: ${ENCRYPT_KEY:}
+
+eureka:
+  client:
+    enabled: ${EUREKA_ENABLED:true}
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info, busrefresh
+  # Config 서버는 중앙 설정의 소비자가 아니므로 자체 추적 설정을 둔다.
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLING_PROBABILITY:1.0}
+    propagation:
+      type: w3c
+  zipkin:
+    tracing:
+      endpoint: ${ZIPKIN_ENDPOINT:http://localhost:9411/api/v2/spans}

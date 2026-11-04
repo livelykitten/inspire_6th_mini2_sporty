@@ -6,6 +6,36 @@
 > 아래 절차는 **MSA 전환 전 React + Spring Boot 모놀리식 버전**을 로컬에서 실행하는 방법입니다. MSA 전환 후 실행 방법은 별도로 정리합니다.  
 > 현재 팀원별 실행 환경이 다를 수 있으므로, 실제로 확인된 오류는 이 문서에 계속 반영해 주세요.
 
+## MSA 로컬 실행: 환경변수 파일 위치 (#61)
+
+`.env` 는 **실행 방법에 따라 두 곳**에 둡니다. 두 파일 모두 커밋하지 않고, `.env.example` 만 저장소에 있습니다.
+
+| 파일 | 누가 읽나 | 만드는 법 |
+| --- | --- | --- |
+| 루트 `.env` | Docker Compose (`compose.yaml` · `compose.app.yaml`) | `cp .env.example .env` |
+| `backend/.env` | IDE · Gradle 로 띄우는 Spring Boot 서비스 7개 공통 | `cp backend/.env.example backend/.env` |
+| `backend/{서비스}/.env` (선택) | 그 서비스 하나 | 다른 값이 필요한 항목만 적는다 (예: `DB_URL`) |
+
+### IntelliJ · Gradle 로 서비스 띄우기
+
+1. 인프라: 루트에서 `docker compose up -d` (DB 3대 · Redis · Kafka)
+2. `cp backend/.env.example backend/.env`
+3. **Working directory 는 `backend/{서비스}`** 로 둡니다. IntelliJ 실행 설정의 기본값(`$MODULE_WORKING_DIR$`)이 이 폴더이고, `./gradlew :{서비스}:bootRun` 도 같습니다.
+4. 순서: discovery-service → config-service → 나머지 서비스 → gateway-service
+
+- 서비스는 Working directory 기준으로 `../.env`(= `backend/.env`)를 먼저, `./.env`(= `backend/{서비스}/.env`)를 나중에 읽습니다. 나중에 읽은 값이 이기므로 서비스 폴더 `.env` 로 공통 값을 덮어쓸 수 있습니다.
+- IntelliJ 실행 설정의 Environment variables 는 `.env` 보다 우선합니다. 따로 넣을 필요는 없습니다.
+- `.env` 에는 설정 파일이 `${이름}` 으로 부르는 값(`ENCRYPT_KEY`, `DB_URL` 등)만 적습니다. `.env` 는 환경변수가 아니라 설정 파일로 읽혀서, `EUREKA_INSTANCE_PREFER_IP_ADDRESS` 같은 환경변수식 이름은 Spring 설정으로 바뀌지 않습니다. 이런 값은 `eureka.instance.prefer-ip-address=true` 처럼 Spring 설정 이름으로 적습니다.
+- Working directory 를 저장소 루트로 두면 `backend/.env` 를 읽지 못합니다 (루트 `.env` 는 Compose 용).
+- `ENCRYPT_KEY` 가 없으면 config-service 가 config-repo 의 `{cipher}` 값(DB 비밀번호 · JWT 키)을 풀지 못해 gateway 가 `jwt.secret` 을 못 받고 기동에 실패합니다. 확인: `curl localhost:8888/gateway-service/default` 응답에 `jwt.secret` 이 평문으로 있으면 정상입니다 (`invalid.jwt.secret` 이면 키가 없거나 다름).
+- `DB_URL` · `DB_USERNAME` · `DB_PASSWORD` 는 서비스마다 달라 `backend/.env` 에 넣지 않습니다. 기본값이 `compose.yaml` 의 DB 에 맞춰져 있습니다.
+
+### Docker Compose 로 전체 스택 띄우기
+
+루트 `.env` 만 있으면 됩니다 (`backend/.env` 는 이미지에 들어가지 않습니다). 자세한 명령은 [CONTRIBUTING.md](CONTRIBUTING.md) 의 "전체 스택 기동" 을 봅니다.
+
+> 아래 1~8 절은 MSA 전환 전 모놀리스(`backend/sporty`) 실행 안내입니다.
+
 ## 기술 스택
 
 | 구분 | 기술 |

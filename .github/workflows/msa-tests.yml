@@ -1,0 +1,139 @@
+name: msa-tests
+
+# MSA 테스트 케이스 파이프라인 (이슈 #43): 전체 스택(compose.yaml + compose.app.yaml)을 띄우고 게이트웨이 경유로 시트 TC 를 점수로 확인한다.
+# 스위트 8개 · 테스트 29개 · 100점. 점수표는 Job Summary, 상세는 아티팩트(results.json · summary.md · 컨테이너 로그).
+# 합격선은 입력 min_score 또는 저장소 변수 MIN_SCORE (기본 80). 점수가 합격선 미만이면 이 워크플로가 실패한다.
+#
+# "최종 배포 전에 돌려야 하는 것만" CI/CD 에 둔다:
+#   - main 으로 가는 PR (릴리스 PR)        - 태그 v* push 시 image.yml 이 이 워크플로를 먼저 호출해, 통과해야 ECR 에 push 한다
+#   - 수동 실행 (workflow_dispatch)
+# 매 PR · 야간 실행은 두지 않는다 (스택 전체를 띄워 10~20분 걸린다). 스트레스 · 스파이크 · 소크 · 장애 주입 부하는
+# 러너가 약해 의미가 없으므로 CI/CD 에 넣지 않고 load-test.yml 을 수동으로 쓴다 (이슈 #44).
+# 담당: 반정욱 (@salieri009) · 작업 위치: .github/workflows/msa-tests.yml
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      suites:
+        description: "실행할 스위트 (예: A,B,C). 비우면 전체"
+        required: false
+        default: ""
+      min_score:
+        description: "합격선 (0~100). 비우면 저장소 변수 MIN_SCORE, 그것도 없으면 80"
+        required: false
+        default: ""
+  workflow_call:
+    inputs:
+      suites:
+        type: string
+        required: false
+        default: ""
+      min_score:
+        type: string
+        required: false
+        default: ""
+
+concurrency:
+  group: msa-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  pipeline:
+    name: 배포 전 점검 (점수 + 부하 스모크)
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    env:
+      MIN_SCORE: ${{ inputs.min_score || vars.MIN_SCORE || '80' }}
+    steps:
+      - name: 코드 내려받기
+        uses: actions/checkout@v4
+
+      - name: Buildx 설정
+        uses: docker/setup-buildx-action@v3
+
+      - name: 환경 파일 (로컬 전용 예시 값)
+        run: cp .env.example .env
+
+      - name: 전체 스택 빌드 · 기동
+        run: docker compose -f compose.yaml -f compose.app.yaml up -d --build
+
+      # compose --wait 는 일회성 kafka-init 의 종료를 실패로 보고하므로 직접 기다린다.
+      - name: 컨테이너 healthy 대기 (최대 10분)
+        run: |
+          deadline=$((SECONDS + 600))
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            bad="$(docker compose -f compose.yaml -f compose.app.yaml ps --all --format '{{.Service}} {{.State}} {{.Health}}' | awk '$1 != "kafka-init" && !($2 == "running" && $3 == "healthy")')"
+            [ -z "$bad" ] && exit 0
+            sleep 10
+          done
+          echo "healthy 가 되지 않은 서비스:"; echo "$bad"
+          exit 1
+
+      - name: 시드 데이터 (시설 · 시설 스냅샷)
+        run: bash tests/pipeline/fixtures.sh
+
+      - name: Eureka 반영 대기 (게이트웨이 라우트 준비)
+        run: |
+          for i in $(seq 1 30); do
+            code="$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/api/matches || true)"
+            [ "$code" = "200" ] && exit 0
+            sleep 5
+          done
+          echo "게이트웨이가 /api/matches 200 을 주지 않음"; exit 1
+
+      - name: 테스트 실행 (점수 계산)
+        run: |
+          suites="${{ inputs.suites }}"
+          if [ -n "$suites" ]; then
+            bash tests/pipeline/run.sh --suite "$suites"
+          else
+            bash tests/pipeline/run.sh
+          fi
+
+      # 장애 테스트(E · F)가 컨테이너를 껐다 켰으므로 시드와 게이트웨이 라우트를 다시 확인한 뒤 스모크를 건다.
+      - name: k6 설치
+        if: ${{ !cancelled() }}
+        uses: grafana/setup-k6-action@v1
+
+      - name: 부하 스모크 (1 VU 30초 · 임계값 위반 시 실패)
+        if: ${{ !cancelled() }}
+        run: |
+          bash tests/pipeline/fixtures.sh
+          for i in $(seq 1 30); do
+            [ "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/api/matches)" = "200" ] && break
+            sleep 5
+          done
+          mkdir -p tests/load/results
+          k6 run tests/load/k6/scenarios.js -e SCENARIO=smoke -e BASE_URL=http://localhost:8000
+
+      - name: 결과 업로드
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: msa-test-results
+          path: |
+            tests/pipeline/results/
+            tests/load/results/
+          if-no-files-found: ignore
+
+      - name: 컨테이너 로그 수집
+        if: ${{ always() }}
+        run: docker compose -f compose.yaml -f compose.app.yaml logs --no-color --timestamps > container-logs.txt 2>&1 || true
+
+      - name: 컨테이너 로그 업로드
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: container-logs
+          path: container-logs.txt
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: 정리
+        if: ${{ always() }}
+        run: docker compose -f compose.yaml -f compose.app.yaml down -v || true

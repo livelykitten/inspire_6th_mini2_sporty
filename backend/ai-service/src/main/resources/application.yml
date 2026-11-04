@@ -1,0 +1,45 @@
+server:
+  port: 8004
+
+spring:
+  application:
+    name: ai-service
+  cloud:
+    stream:
+      kafka:
+        binder:
+          brokers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    openfeign:
+      client:
+        config:
+          default:
+            connectTimeout: 2000
+            readTimeout: 3000
+  config:
+    import:
+      # 공통 backend/.env 를 먼저, 서비스 폴더 .env 를 나중에 읽어 서비스별 값이 이긴다 (나중 import 가 우선, #61)
+      - "optional:file:../.env[.properties]"
+      - "optional:file:./.env[.properties]"
+      - "optional:file:./ai-service/.env[.properties]"
+      - "optional:configserver:"
+  ai:
+    retry:
+      # One attempt, with no automatic retries extending the OpenAI timeout.
+      max-attempts: 1
+
+# Applied to synchronous OpenAI HTTP calls by OpenAiHttpClientConfig.
+ai:
+  openai:
+    timeout: 10s
+
+eureka:
+  client:
+    enabled: ${EUREKA_ENABLED:true}
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

@@ -1,0 +1,226 @@
+# W-34 선행: 앱 서비스 7개 + 프론트(nginx). compose.yaml(DB · Redis · Kafka)에 얹어서 쓰는 override 이다.
+#
+#   docker compose -f compose.yaml -f compose.app.yaml up -d --build --wait
+#
+# 이미지는 backend/Dockerfile(master, 생성물)의 target 으로 빌드한다. 원본은 backend/{서비스}/Dockerfile 이고
+# 담당자는 거기만 고친다 (수정 후 bash scripts/gen-master-dockerfile.sh).
+# IDE 로 서비스를 띄우는 팀원은 compose.yaml 만 쓰면 된다 (이 파일은 앱 컨테이너를 추가하므로 같이 쓰지 않는다).
+#
+# 필수 값: .env 의 JWT_SECRET_KEY (gateway · user 가 같은 값). 나머지는 기본값이 있다 (.env.example 참고).
+# 기동 순서: discovery → config → user · match · facility · ai → gateway → frontend (depends_on + healthcheck)
+#
+# 담당: 반정욱 (@salieri009) · 작업 위치: compose.app.yaml (서비스별 Dockerfile 담당자는 각 블록 주석 참고)
+
+x-app-env: &app-env
+  EUREKA_URL: http://discovery-service:8761/eureka
+  EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
+  SPRING_CLOUD_CONFIG_URI: http://config-service:8888
+  # W-33: 컨테이너 안의 localhost 는 자기 자신이라 Zipkin 전송 주소를 compose 서비스 이름으로 준다 (기본값 localhost:9411 은 IDE 실행용).
+  ZIPKIN_ENDPOINT: http://zipkin:9411/api/v2/spans
+  TZ: Asia/Seoul
+
+# 서비스 컨테이너 공통: 시작 느린 JVM 을 위해 start_period 를 넉넉히 둔다.
+x-app: &app
+  restart: unless-stopped
+
+x-health-actuator: &health-actuator
+  start_period: 40s
+  interval: 10s
+  timeout: 5s
+  retries: 12
+
+services:
+  # 담당: 김우석 (@woo1956) · Dockerfile: backend/discovery-service/Dockerfile
+  discovery-service:
+    <<: *app
+    build: { context: ./backend, dockerfile: Dockerfile, target: discovery-service }
+    image: sporty/discovery-service:local
+    mem_limit: 512m
+    environment:
+      TZ: Asia/Seoul
+      ZIPKIN_ENDPOINT: http://zipkin:9411/api/v2/spans
+    ports:
+      - "8761:8761"
+    healthcheck:
+      # discovery 는 actuator 가 없어 Eureka 화면(/)으로 확인한다.
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8761/"]
+      <<: *health-actuator
+
+  # 담당: 김우석 (@woo1956) · Dockerfile: backend/config-service/Dockerfile
+  config-service:
+    <<: *app
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: config-service
+      additional_contexts:
+        config-repo: ./config-repo
+    image: sporty/config-service:local
+    mem_limit: 512m
+    volumes:
+      - ./config-repo:/config-repo:ro
+    environment:
+      <<: *app-env
+      ENCRYPT_KEY: ${ENCRYPT_KEY:-}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    ports:
+      - "8888:8888"
+    depends_on:
+      discovery-service: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8888/actuator/health"]
+      <<: *health-actuator
+
+  # 담당: 송석주 (@songsj27) · Dockerfile: backend/user-service/Dockerfile
+  user-service:
+    <<: *app
+    build: { context: ./backend, dockerfile: Dockerfile, target: user-service }
+    image: sporty/user-service:local
+    mem_limit: 768m
+    environment:
+      <<: *app-env
+      DB_URL: jdbc:mariadb://user-db:3306/user_db
+      DB_USERNAME: ${USER_DB_USER:-user_svc}
+      DB_PASSWORD: ${USER_DB_PASSWORD:-user_svc}
+      REDIS_HOST: redis
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?.env 에 JWT_SECRET_KEY 를 설정하세요 (gateway 와 같은 값)}
+    ports:
+      - "8001:8001"
+    depends_on:
+      config-service: { condition: service_healthy }
+      user-db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8001/actuator/health"]
+      <<: *health-actuator
+
+  # 담당: 김예림 (@kimrim818-afk) · Dockerfile: backend/match-service/Dockerfile
+  match-service:
+    <<: *app
+    build: { context: ./backend, dockerfile: Dockerfile, target: match-service }
+    image: sporty/match-service:local
+    mem_limit: 768m
+    environment:
+      <<: *app-env
+      DB_URL: jdbc:mariadb://match-db:3306/match_db
+      DB_USERNAME: ${MATCH_DB_USER:-match_svc}
+      DB_PASSWORD: ${MATCH_DB_PASSWORD:-match_svc}
+      SAGA_FAIL_CLEANUP: ${SAGA_FAIL_CLEANUP:-false}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    ports:
+      - "8002:8002"
+    depends_on:
+      config-service: { condition: service_healthy }
+      match-db: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8002/actuator/health"]
+      <<: *health-actuator
+
+  # 담당: 이서현 (@seohynee) · Dockerfile: backend/facility-service/Dockerfile
+  facility-service:
+    <<: *app
+    build: { context: ./backend, dockerfile: Dockerfile, target: facility-service }
+    image: sporty/facility-service:local
+    mem_limit: 768m
+    environment:
+      <<: *app-env
+      DB_URL: jdbc:mariadb://facility-db:3306/facility_db
+      DB_USERNAME: ${FACILITY_DB_USER:-facility_svc}
+      DB_PASSWORD: ${FACILITY_DB_PASSWORD:-facility_svc}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      # 키가 없으면 기동 시 동기화가 실패하지만 서비스는 계속 뜬다.
+      FACILITY_SYNC_ON_STARTUP: ${FACILITY_SYNC_ON_STARTUP:-true}
+      PUBLIC_DATA_API_KEY: ${PUBLIC_DATA_API_KEY:-}
+      PUBLIC_DATA_API_URL: ${PUBLIC_DATA_API_URL:-http://openapi.seoul.go.kr:8088/}
+    ports:
+      - "8003:8003"
+    depends_on:
+      config-service: { condition: service_healthy }
+      facility-db: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8003/actuator/health"]
+      <<: *health-actuator
+
+  # 담당: 서정운 (@Jeonun-real) · Dockerfile: backend/ai-service/Dockerfile
+  ai-service:
+    <<: *app
+    build: { context: ./backend, dockerfile: Dockerfile, target: ai-service }
+    image: sporty/ai-service:local
+    mem_limit: 768m
+    environment:
+      <<: *app-env
+      # 값이 비면 Spring AI 의 api-key 검증으로 기동이 실패한다. 키가 없어도 서비스가 뜨도록 더미를 둔다 (AI 호출만 실패).
+      OPEN_AI_KEY: ${OPEN_AI_KEY:-not-set-dummy-key}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    ports:
+      - "8004:8004"
+    depends_on:
+      config-service: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8004/actuator/health"]
+      <<: *health-actuator
+
+  # 담당: 김우석 (@woo1956) · Dockerfile: backend/gateway-service/Dockerfile
+  gateway-service:
+    <<: *app
+    build: { context: ./backend, dockerfile: Dockerfile, target: gateway-service }
+    image: sporty/gateway-service:local
+    mem_limit: 640m
+    environment:
+      <<: *app-env
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?.env 에 JWT_SECRET_KEY 를 설정하세요 (user-service 와 같은 값)}
+      CORS_ALLOWED_ORIGIN: ${CORS_ALLOWED_ORIGIN:-http://localhost}
+    ports:
+      - "8000:8000"
+    depends_on:
+      config-service: { condition: service_healthy }
+      user-service: { condition: service_healthy }
+      match-service: { condition: service_healthy }
+      facility-service: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8000/actuator/health"]
+      <<: *health-actuator
+  
+  notification-service:
+    <<: *app
+    build: { context: ./backend, dockerfile: Dockerfile, target: notification-service }
+    image: sporty/notification-service:local
+    mem_limit: 512m
+    environment:
+      <<: *app-env
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SMTP_USERNAME: ${SMTP_USERNAME}
+      SMTP_APP_PASSWORD: ${SMTP_APP_PASSWORD}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+    ports:
+      - 8010:8010
+    depends_on:
+      discovery-service: { condition: service_healthy }
+      config-service: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8010/actuator/health"]
+      <<: *health-actuator
+
+  # 담당: 반정욱 (@salieri009) · Dockerfile: frontend/Dockerfile (master 대상 아님)
+  frontend:
+    <<: *app
+    build: { context: ./frontend, dockerfile: Dockerfile }
+    image: sporty/frontend:local
+    mem_limit: 64m
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+    depends_on:
+      gateway-service: { condition: service_healthy }
+    healthcheck:
+      # alpine 에서 localhost 는 IPv6(::1) 로 풀려 nginx(IPv4) 에 붙지 못하므로 127.0.0.1 로 확인한다.
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 6

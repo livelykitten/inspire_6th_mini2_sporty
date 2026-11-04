@@ -1,0 +1,27 @@
+# user-service 설정 (W-24). DB 비밀번호 · JWT 키는 '{cipher}...' (W-25, README.md)
+spring:
+  datasource:
+    driver-class-name: ${DB_DRIVER:org.mariadb.jdbc.Driver}
+    url: ${DB_URL:jdbc:mariadb://localhost:3306/user_db}
+    username: ${DB_USERNAME:user_svc}
+    password: '{cipher}ec8b1370cc7334f0552d3f17da4e6b1c627c20195663bcaa930c890e278edc6e'
+  jpa:
+    hibernate:
+      ddl-auto: update
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+  cloud:
+    stream:
+      kafka:
+        binder:
+          producer-properties:
+            key.serializer: org.apache.kafka.common.serialization.ByteArraySerializer
+            value.serializer: org.apache.kafka.common.serialization.ByteArraySerializer
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: 6379
+
+# gateway-service 와 같은 값 (같은 암호문)
+jwt:
+  secret: '{cipher}6bf811c263724af8c1af56ff3ab9b43cf843ccb3f0e3aa6d3663daab9f83644b729170f1662e44ac7528524580687aa0deb4fa2ee70da30338b706fa9636e733830c0a190c237951021c916f945c603b'

@@ -1,0 +1,38 @@
+# W-35 ECR 이미지로 배포할 때만 얹는 override (DEPLOY_MODE=ecr). 빌드 대안(DEPLOY_MODE=build)에서는 쓰지 않는다.
+#
+#   docker compose -f compose.yaml -f compose.app.yaml -f compose.aws.yaml -f compose.ecr.yaml pull
+#
+# 이미지 이름은 {ECR_REGISTRY}/{PROJECT_NAME}/{서비스}:{IMAGE_TAG}. GitHub Actions(image.yml)가 같은 이름으로 push 한다.
+# build 항목을 지워서 EC2 에서 빌드하지 않고 pull 만 한다.
+#
+# 담당: 반정욱 (@salieri009) · 작업 위치: compose.ecr.yaml
+
+x-ecr: &ecr
+  build: !reset null
+  pull_policy: always
+
+services:
+  discovery-service:
+    <<: *ecr
+    image: ${ECR_REGISTRY:?ECR_REGISTRY 를 설정하세요}/${PROJECT_NAME:-sporty}/discovery-service:${IMAGE_TAG:-latest}
+  config-service:
+    <<: *ecr
+    image: ${ECR_REGISTRY:?ECR_REGISTRY 를 설정하세요}/${PROJECT_NAME:-sporty}/config-service:${IMAGE_TAG:-latest}
+  gateway-service:
+    <<: *ecr
+    image: ${ECR_REGISTRY:?ECR_REGISTRY 를 설정하세요}/${PROJECT_NAME:-sporty}/gateway-service:${IMAGE_TAG:-latest}
+  user-service:
+    <<: *ecr
+    image: ${ECR_REGISTRY:?ECR_REGISTRY 를 설정하세요}/${PROJECT_NAME:-sporty}/user-service:${IMAGE_TAG:-latest}
+  match-service:
+    <<: *ecr
+    image: ${ECR_REGISTRY:?ECR_REGISTRY 를 설정하세요}/${PROJECT_NAME:-sporty}/match-service:${IMAGE_TAG:-latest}
+  facility-service:
+    <<: *ecr
+    image: ${ECR_REGISTRY:?ECR_REGISTRY 를 설정하세요}/${PROJECT_NAME:-sporty}/facility-service:${IMAGE_TAG:-latest}
+  ai-service:
+    <<: *ecr
+    image: ${ECR_REGISTRY:?ECR_REGISTRY 를 설정하세요}/${PROJECT_NAME:-sporty}/ai-service:${IMAGE_TAG:-latest}
+  frontend:
+    <<: *ecr
+    image: ${ECR_REGISTRY:?ECR_REGISTRY 를 설정하세요}/${PROJECT_NAME:-sporty}/frontend:${IMAGE_TAG:-latest}

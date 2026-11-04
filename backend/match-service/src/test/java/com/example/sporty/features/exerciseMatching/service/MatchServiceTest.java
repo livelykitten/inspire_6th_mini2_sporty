@@ -1,0 +1,410 @@
+package com.example.sporty.features.exerciseMatching.service;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.never;
+
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.mockito.InOrder;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.MockedStatic;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import com.example.sporty.features.commons.exception.exerciseMatching.MatchNotFoundException;
+import com.example.sporty.features.commons.exception.exerciseMatching.MatchOwnerCannotLeaveException;
+import com.example.sporty.features.commons.exception.exerciseMatching.MatchParticipantNotFoundException;
+import com.example.sporty.features.commons.exception.matches.ServiceNotFoundException;
+import com.example.sporty.features.commons.util.SportType;
+import com.example.sporty.features.exerciseMatching.withdrawal.WithdrawalCleanupResult;
+import com.example.sporty.features.exerciseMatching.domain.dto.MatchCreateRequestDto;
+import com.example.sporty.features.exerciseMatching.domain.dto.MatchDetailResponseDto;
+import com.example.sporty.features.exerciseMatching.client.MemberLookup;
+import com.example.sporty.features.exerciseMatching.client.MemberProfile;
+import com.example.sporty.features.exerciseMatching.domain.entity.FacilityServiceSnapshotEntity;
+import com.example.sporty.features.exerciseMatching.domain.entity.MatchEntity;
+import com.example.sporty.features.exerciseMatching.domain.entity.MatchParticipantEntity;
+import com.example.sporty.features.exerciseMatching.domain.enums.MatchParticipantRole;
+import com.example.sporty.features.exerciseMatching.domain.enums.MatchStatus;
+import com.example.sporty.features.exerciseMatching.domain.enums.SkillLevel;
+import com.example.sporty.features.exerciseMatching.domain.enums.GenderGroup;
+import com.example.sporty.features.exerciseMatching.repository.MatchParticipantRepository;
+import com.example.sporty.features.exerciseMatching.repository.MatchRepository;
+import com.example.sporty.features.exerciseMatching.repository.FacilityServiceSnapshotRepository;
+import com.example.sporty.support.FacilityFixtures;
+
+@ExtendWith(MockitoExtension.class)
+class MatchServiceTest {
+    @Mock com.example.sporty.features.exerciseMatching.withdrawal.MatchUserGuardService userGuards;
+    @Mock org.springframework.transaction.PlatformTransactionManager transactionManager;
+
+
+    @Mock
+    private MatchRepository matchRepository;
+
+    @Mock
+    private MatchParticipantRepository matchParticipantRepository;
+
+    @Mock
+    private MemberLookup memberLookup;
+
+    @Mock
+    private FacilityServiceSnapshotRepository facilityServiceSnapshotRepository;
+
+    @InjectMocks
+    private MatchService matchService;
+
+    @Test
+    @DisplayName("[TC-EM01] 비활성 시설로 매치를 생성하면 SERVICE_NOT_FOUND로 처리한다")
+    void createMatchRejectsInactiveFacility() {
+        Long serviceId = 7L;
+        Long userId = 101L;
+        FacilityServiceSnapshotEntity inactiveFacility = FacilityServiceSnapshotEntity.builder()
+                .serviceId(serviceId)
+                .name("비활성 시설")
+                .locationName("테스트 장소")
+                .region("강남구")
+                .isFree(true)
+                .active(false)
+                .sourceUpdatedAt(LocalDateTime.now())
+                .build();
+        MatchCreateRequestDto request = MatchCreateRequestDto.builder()
+                .serviceId(serviceId)
+                .build();
+        when(facilityServiceSnapshotRepository.findById(serviceId))
+                .thenReturn(Optional.of(inactiveFacility));
+
+        assertThrows(ServiceNotFoundException.class,
+                () -> matchService.createMatch(request, userId));
+
+        verify(memberLookup).validateActive(userId);
+        verifyNoInteractions(matchRepository, matchParticipantRepository);
+    }
+
+    @Test
+    @DisplayName("[TC-EM03-01] 매칭 상세 정상 조회 - 기본 정보와 조회된 참가 인원을 반환한다")
+    void getMatchDetailReturnsStoredMatchInformation() {
+        LocalDateTime startAt = LocalDateTime.of(2026, 9, 26, 19, 0);
+        LocalDateTime endAt = startAt.plusHours(2);
+        MatchEntity match = MatchEntity.builder()
+                .id(101L)
+                .title("주말 풋살 모집")
+                .description("같이 풋살하실 분")
+                .startAt(startAt)
+                .endAt(endAt)
+                .maxParticipant(10)
+                .status(MatchStatus.CLOSED)
+                .skillLevel(SkillLevel.INTERMEDIATE)
+                .sportType(SportType.FUTSAL)
+                .genderGroup(GenderGroup.FEMALE)
+                .service(FacilityFixtures.service(7L, true))
+                .build();
+        when(matchRepository.findById(101L)).thenReturn(Optional.of(match));
+        when(matchParticipantRepository.findAllByMatch_IdOrderByIdAsc(101L)).thenReturn(List.of(
+                participant(1L, MatchParticipantRole.OWNER),
+                participant(2L, MatchParticipantRole.PARTICIPANT)));
+        // 프로필 조회 순서가 달라도 사용자 ID로 연결해야 한다.
+        when(memberLookup.getProfiles(List.of(1L, 2L))).thenReturn(Map.of(
+                2L, profile(402L, "참가자", null),
+                1L, profile(401L, "생성자", "https://example.com/owner.png")));
+
+        MatchDetailResponseDto response = matchService.getMatchDetail(101L, null);
+
+        assertThat(response.getMatchId()).isEqualTo(101L);
+        assertThat(response.getTitle()).isEqualTo("주말 풋살 모집");
+        assertThat(response.getDescription()).isEqualTo("같이 풋살하실 분");
+        assertThat(response.getStartAt()).isEqualTo(startAt);
+        assertThat(response.getEndAt()).isEqualTo(endAt);
+        assertThat(response.getMaxParticipant()).isEqualTo(10);
+        assertThat(response.getCurrentParticipantCount()).isEqualTo(2);
+        assertThat(response.getStatus()).isEqualTo(MatchStatus.CLOSED);
+        assertThat(response.getSkillLevel()).isEqualTo(SkillLevel.INTERMEDIATE);
+        assertThat(response.getSportType()).isEqualTo(SportType.FUTSAL);
+        assertThat(response.getGenderGroup()).isEqualTo(GenderGroup.FEMALE);
+        assertThat(response.getServiceId()).isEqualTo(7L);
+
+        assertThat(response.getParticipants()).hasSize(2);
+        assertThat(response.getParticipants().get(0).getProfileId()).isEqualTo(401L);
+        assertThat(response.getParticipants().get(0).getNickname()).isEqualTo("생성자");
+        assertThat(response.getParticipants().get(0).getImageUrl()).isEqualTo("https://example.com/owner.png");
+        assertThat(response.getParticipants().get(0).getRole()).isEqualTo(MatchParticipantRole.OWNER);
+        assertThat(response.getParticipants().get(1).getProfileId()).isEqualTo(402L);
+        assertThat(response.getParticipants().get(1).getNickname()).isEqualTo("참가자");
+        assertThat(response.getParticipants().get(1).getImageUrl()).isNull();
+        assertThat(response.getParticipants().get(1).getRole()).isEqualTo(MatchParticipantRole.PARTICIPANT);
+        assertThat(response.getIsOwner()).isFalse();
+        assertThat(response.getIsParticipant()).isFalse();
+        // 연결된 서비스와 장소 정보를 반환한다.
+        assertThat(response.getServiceName()).isEqualTo("Test service 7");
+        assertThat(response.getLocationName()).isEqualTo("Test location");
+        assertThat(response.getRegion()).isEqualTo("강남구");
+        verify(memberLookup).getProfiles(List.of(1L, 2L));
+    }
+
+    @Test
+    @DisplayName("[추가 검증] 참가 정보가 없으면 현재 인원은 0이며 생성자 수를 임의로 더하지 않는다")
+    void getMatchDetailReturnsZeroWhenNoParticipantsAreStored() {
+        MatchEntity match = MatchEntity.builder().id(101L).service(FacilityFixtures.service(7L, true)).build();
+        when(matchRepository.findById(101L)).thenReturn(Optional.of(match));
+        when(matchParticipantRepository.findAllByMatch_IdOrderByIdAsc(101L)).thenReturn(List.of());
+
+        MatchDetailResponseDto response = matchService.getMatchDetail(101L, 1L);
+
+        assertThat(response.getCurrentParticipantCount()).isZero();
+        assertThat(response.getParticipants()).isEmpty();
+        assertThat(response.getIsOwner()).isFalse();
+        assertThat(response.getIsParticipant()).isFalse();
+        verifyNoInteractions(memberLookup);
+    }
+
+    @Test
+    @DisplayName("[TC-EM03-02] 존재하지 않는 매칭 상세 조회 - 404 예외가 발생한다")
+    void getMatchDetailThrowsNotFoundWhenMatchDoesNotExist() {
+        when(matchRepository.findById(999999L)).thenReturn(Optional.empty());
+
+        MatchNotFoundException exception = assertThrows(MatchNotFoundException.class,
+                () -> matchService.getMatchDetail(999999L, null));
+
+        assertThat(exception.getMessage()).isEqualTo("매치를 찾을 수 없습니다.");
+        verifyNoInteractions(matchParticipantRepository, memberLookup);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"1,true,true", "2,false,true", "3,false,false"})
+    @DisplayName("조회 사용자의 해당 매치 참가 역할로 생성자와 참여 여부를 구분한다")
+    void getMatchDetailReturnsCurrentUserState(Long userId, boolean owner, boolean joined) {
+        when(matchRepository.findById(101L)).thenReturn(Optional.of(MatchEntity.builder().id(101L).service(FacilityFixtures.service(7L, true)).build()));
+        when(matchParticipantRepository.findAllByMatch_IdOrderByIdAsc(101L)).thenReturn(List.of(
+                participant(1L, MatchParticipantRole.OWNER),
+                participant(2L, MatchParticipantRole.PARTICIPANT)));
+        when(memberLookup.getProfiles(List.of(1L, 2L))).thenReturn(Map.of());
+
+        MatchDetailResponseDto response = matchService.getMatchDetail(101L, userId);
+
+        assertThat(response.getIsOwner()).isEqualTo(owner);
+        assertThat(response.getIsParticipant()).isEqualTo(joined);
+    }
+
+    @Test
+    @DisplayName("프로필이 없어도 참가자 수와 역할을 유지하고 개인정보 필드는 null로 반환한다")
+    void missingProfileDoesNotRemoveParticipant() {
+        when(matchRepository.findById(101L)).thenReturn(Optional.of(MatchEntity.builder().id(101L).service(FacilityFixtures.service(7L, true)).build()));
+        when(matchParticipantRepository.findAllByMatch_IdOrderByIdAsc(101L))
+                .thenReturn(List.of(participant(1L, MatchParticipantRole.OWNER)));
+        when(memberLookup.getProfiles(List.of(1L))).thenReturn(Map.of());
+
+        MatchDetailResponseDto response = matchService.getMatchDetail(101L, 1L);
+
+        assertThat(response.getCurrentParticipantCount()).isEqualTo(1);
+        assertThat(response.getParticipants()).hasSize(1);
+        assertThat(response.getParticipants().get(0).getProfileId()).isNull();
+        assertThat(response.getParticipants().get(0).getNickname()).isNull();
+        assertThat(response.getParticipants().get(0).getImageUrl()).isNull();
+        assertThat(response.getParticipants().get(0).getRole()).isEqualTo(MatchParticipantRole.OWNER);
+        assertThat(response.getIsOwner()).isTrue();
+        assertThat(response.getIsParticipant()).isTrue();
+    }
+
+    @Test
+    @DisplayName("프로필 ID는 Long 값을 잘라내지 않고 반환한다")
+    void profileIdRetainsLongValue() {
+        when(matchRepository.findById(101L)).thenReturn(Optional.of(MatchEntity.builder().id(101L).service(FacilityFixtures.service(7L, true)).build()));
+        when(matchParticipantRepository.findAllByMatch_IdOrderByIdAsc(101L))
+                .thenReturn(List.of(participant(1L, MatchParticipantRole.OWNER)));
+        when(memberLookup.getProfiles(List.of(1L)))
+                .thenReturn(Map.of(1L, profile(2147483648L, "생성자", null)));
+
+        assertThat(matchService.getMatchDetail(101L, null).getParticipants().get(0).getProfileId())
+                .isEqualTo(2147483648L);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"1,RECRUITING", "-1,CLOSED"})
+    @DisplayName("[EM07-001, EM07-002] 시작 전후 모두 본인의 참가 정보만 삭제하고 매치는 유지한다")
+    void leaveMatchDeletesOnlyCurrentParticipant(int startOffsetHours, MatchStatus status) {
+        MatchEntity match = MatchEntity.builder().id(301L)
+                .startAt(LocalDateTime.now().plusHours(startOffsetHours))
+                .status(status).build();
+        MatchParticipantEntity participant = MatchParticipantEntity.builder()
+                .id(10L).match(match).userId(2L).role(MatchParticipantRole.PARTICIPANT).build();
+        when(matchRepository.findByIdForUpdate(301L)).thenReturn(Optional.of(match));
+        when(matchParticipantRepository.findByMatch_IdAndUserId(301L, 2L))
+                .thenReturn(Optional.of(participant));
+
+        matchService.leaveMatch(301L, 2L);
+
+        verify(matchRepository).findByIdForUpdate(301L);
+        verify(matchParticipantRepository).findByMatch_IdAndUserId(301L, 2L);
+        verify(matchParticipantRepository).delete(participant);
+        verifyNoMoreInteractions(matchRepository, matchParticipantRepository);
+        verifyNoInteractions(memberLookup);
+        assertThat(match.getStatus()).isEqualTo(status);
+    }
+
+    @Test
+    @DisplayName("[EM07-003] OWNER 탈퇴 시 참가 정보와 매치를 삭제하지 않는다")
+    void leaveMatchRejectsOwner() {
+        when(matchRepository.findByIdForUpdate(303L)).thenReturn(Optional.of(MatchEntity.builder().id(303L).build()));
+        when(matchParticipantRepository.findByMatch_IdAndUserId(303L, 1L))
+                .thenReturn(Optional.of(participant(1L, MatchParticipantRole.OWNER)));
+
+        assertThrows(MatchOwnerCannotLeaveException.class, () -> matchService.leaveMatch(303L, 1L));
+
+        verify(matchRepository).findByIdForUpdate(303L);
+        verify(matchParticipantRepository).findByMatch_IdAndUserId(303L, 1L);
+        verifyNoMoreInteractions(matchRepository, matchParticipantRepository);
+        verifyNoInteractions(memberLookup);
+    }
+
+    @Test
+    @DisplayName("[EM07-004] 미참여자 탈퇴 시 기존 참가 정보와 매치를 변경하지 않는다")
+    void leaveMatchRejectsNonParticipant() {
+        when(matchRepository.findByIdForUpdate(304L)).thenReturn(Optional.of(MatchEntity.builder().id(304L).build()));
+        when(matchParticipantRepository.findByMatch_IdAndUserId(304L, 5L)).thenReturn(Optional.empty());
+
+        assertThrows(MatchParticipantNotFoundException.class, () -> matchService.leaveMatch(304L, 5L));
+
+        verify(matchRepository).findByIdForUpdate(304L);
+        verify(matchParticipantRepository).findByMatch_IdAndUserId(304L, 5L);
+        verifyNoMoreInteractions(matchRepository, matchParticipantRepository);
+        verifyNoInteractions(memberLookup);
+    }
+
+    @Test
+    @DisplayName("[EM07-005] 없는 매치 탈퇴 시 참가 정보에 접근하지 않는다")
+    void leaveMatchRejectsMissingMatch() {
+        when(matchRepository.findByIdForUpdate(99999L)).thenReturn(Optional.empty());
+
+        assertThrows(MatchNotFoundException.class, () -> matchService.leaveMatch(99999L, 2L));
+
+        verify(matchRepository).findByIdForUpdate(99999L);
+        verifyNoMoreInteractions(matchRepository);
+        verifyNoInteractions(matchParticipantRepository, memberLookup);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"1,4,RECRUITING", "0,4,CLOSED", "-1,4,CLOSED", "1,5,CLOSED", "1,6,CLOSED"})
+    @DisplayName("마감된 매치는 시작 전이고 탈퇴 후 빈자리가 있을 때만 모집을 재개한다")
+    void leaveReopensOnlyBeforeStartWithVacancy(int startOffsetSeconds, long remainingCount,
+            MatchStatus expectedStatus) {
+        LocalDateTime now = LocalDateTime.of(2026, 9, 28, 19, 0);
+        MatchEntity match = MatchEntity.builder().id(301L).maxParticipant(5)
+                .startAt(now.plusSeconds(startOffsetSeconds)).status(MatchStatus.CLOSED).build();
+        when(matchRepository.findByIdForUpdate(301L)).thenReturn(Optional.of(match));
+        when(matchParticipantRepository.findByMatch_IdAndUserId(301L, 2L))
+                .thenReturn(Optional.of(participant(2L, MatchParticipantRole.PARTICIPANT)));
+        if (startOffsetSeconds > 0) {
+            when(matchParticipantRepository.countByMatch_Id(301L)).thenReturn(remainingCount);
+        }
+
+        try (MockedStatic<LocalDateTime> clock = mockStatic(LocalDateTime.class)) {
+            clock.when(LocalDateTime::now).thenReturn(now);
+            matchService.leaveMatch(301L, 2L);
+        }
+
+        assertThat(match.getStatus()).isEqualTo(expectedStatus);
+        if (startOffsetSeconds <= 0) {
+            verify(matchParticipantRepository, never()).countByMatch_Id(301L);
+        }
+    }
+
+    // 탈퇴 Saga 설계 §3.2 5번 / EV-03: 생성 매치는 삭제(deleted), 참가 매치는 본인 기록만 삭제(left)하고 결과 ID를 돌려준다.
+    @Test
+    @DisplayName("[탈퇴 정리] OWNER 매치는 삭제하고 PARTICIPANT 매치는 본인 기록만 삭제하며 EV-03용 ID 목록을 반환한다")
+    void removeMatchesForWithdrawalDeletesOwnedAndLeavesJoined() {
+        MatchEntity owned = MatchEntity.builder().id(401L).build();
+        MatchEntity joined = MatchEntity.builder().id(402L).startAt(LocalDateTime.now().plusDays(1))
+                .status(MatchStatus.RECRUITING).build();
+        MatchParticipantEntity ownerRow = withdrawalParticipant(owned, 1L, MatchParticipantRole.OWNER);
+        MatchParticipantEntity joinedRow = withdrawalParticipant(joined, 1L, MatchParticipantRole.PARTICIPANT);
+        when(matchParticipantRepository.findAllByUserIdOrderByMatch_StartAtDescMatch_IdDesc(1L))
+                .thenReturn(List.of(ownerRow, joinedRow));
+        when(matchRepository.findByIdForUpdate(401L)).thenReturn(Optional.of(owned));
+        when(matchRepository.findByIdForUpdate(402L)).thenReturn(Optional.of(joined));
+        when(matchParticipantRepository.findByMatch_IdAndUserId(401L, 1L)).thenReturn(Optional.of(ownerRow));
+        when(matchParticipantRepository.findByMatch_IdAndUserId(402L, 1L)).thenReturn(Optional.of(joinedRow));
+
+        WithdrawalCleanupResult result = matchService.removeMatchesForWithdrawal(1L);
+
+        assertThat(result.deletedMatchIds()).containsExactly(401L);
+        assertThat(result.leftMatchIds()).containsExactly(402L);
+        verify(matchParticipantRepository).deleteAllByMatch_Id(401L);
+        verify(matchRepository).delete(owned);
+        verify(matchParticipantRepository).delete(joinedRow);
+        verify(matchRepository, never()).delete(joined);
+        verifyNoInteractions(memberLookup);
+    }
+
+    @Test
+    @DisplayName("[탈퇴 정리] 여러 매치는 참가/탈퇴 API와 같은 매치 잠금을 ID 오름차순으로 얻고 결과도 같은 순서다")
+    void removeMatchesForWithdrawalLocksMatchesInIdOrder() {
+        MatchEntity first = MatchEntity.builder().id(501L).startAt(LocalDateTime.now().plusDays(1))
+                .status(MatchStatus.RECRUITING).build();
+        MatchEntity second = MatchEntity.builder().id(502L).startAt(LocalDateTime.now().plusDays(1))
+                .status(MatchStatus.RECRUITING).build();
+        // 조회 순서는 시작 시각 내림차순이라 ID 순서와 다르다.
+        MatchParticipantEntity secondRow = withdrawalParticipant(second, 1L, MatchParticipantRole.PARTICIPANT);
+        MatchParticipantEntity firstRow = withdrawalParticipant(first, 1L, MatchParticipantRole.PARTICIPANT);
+        when(matchParticipantRepository.findAllByUserIdOrderByMatch_StartAtDescMatch_IdDesc(1L))
+                .thenReturn(List.of(secondRow, firstRow));
+        when(matchRepository.findByIdForUpdate(501L)).thenReturn(Optional.of(first));
+        when(matchRepository.findByIdForUpdate(502L)).thenReturn(Optional.of(second));
+        when(matchParticipantRepository.findByMatch_IdAndUserId(501L, 1L)).thenReturn(Optional.of(firstRow));
+        when(matchParticipantRepository.findByMatch_IdAndUserId(502L, 1L)).thenReturn(Optional.of(secondRow));
+
+        WithdrawalCleanupResult result = matchService.removeMatchesForWithdrawal(1L);
+
+        InOrder order = inOrder(matchRepository);
+        // 각 매치는 정리 대상 확인과 탈퇴 처리에서 두 번 잠기므로 횟수가 아니라 순서만 확인한다.
+        order.verify(matchRepository, atLeastOnce()).findByIdForUpdate(501L);
+        order.verify(matchRepository, atLeastOnce()).findByIdForUpdate(502L);
+        assertThat(result.leftMatchIds()).containsExactly(501L, 502L);
+        assertThat(result.deletedMatchIds()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("[탈퇴 정리] 참가 이력이 없으면 매치를 잠그거나 삭제하지 않고 빈 결과를 반환한다")
+    void removeMatchesForWithdrawalDoesNothingWithoutParticipation() {
+        when(matchParticipantRepository.findAllByUserIdOrderByMatch_StartAtDescMatch_IdDesc(1L))
+                .thenReturn(List.of());
+
+        WithdrawalCleanupResult result = matchService.removeMatchesForWithdrawal(1L);
+
+        assertThat(result.deletedMatchIds()).isEmpty();
+        assertThat(result.leftMatchIds()).isEmpty();
+        verify(matchParticipantRepository).findAllByUserIdOrderByMatch_StartAtDescMatch_IdDesc(1L);
+        verifyNoInteractions(matchRepository, memberLookup);
+        verifyNoMoreInteractions(matchParticipantRepository);
+    }
+
+    private MatchParticipantEntity withdrawalParticipant(MatchEntity match, Long userId, MatchParticipantRole role) {
+        return MatchParticipantEntity.builder().match(match).userId(userId).role(role).build();
+    }
+
+    private MatchParticipantEntity participant(Long userId, MatchParticipantRole role) {
+        return MatchParticipantEntity.builder()
+                .userId(userId)
+                .role(role)
+                .build();
+    }
+
+    private MemberProfile profile(Long profileId, String nickname, String imageUrl) {
+        return new MemberProfile(profileId, nickname, imageUrl);
+    }
+}

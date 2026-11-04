@@ -1,0 +1,77 @@
+server:
+  port: 8002
+
+spring:
+  application:
+    name: match-service
+  config:
+    import:
+      # 공통 backend/.env 를 먼저, 서비스 폴더 .env 를 나중에 읽어 서비스별 값이 이긴다 (나중 import 가 우선, #61)
+      - "optional:file:../.env[.properties]"
+      - "optional:file:./.env[.properties]"
+      - "optional:configserver:"
+  datasource:
+    driver-class-name: ${DB_DRIVER:org.mariadb.jdbc.Driver}
+    url: ${DB_URL:jdbc:mariadb://localhost:3307/match_db}
+    username: ${DB_USERNAME:match_svc}
+    password: ${DB_PASSWORD:match_svc}
+  jpa:
+    hibernate:
+      ddl-auto: update
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+  cloud:
+    stream:
+      kafka:
+        binder:
+          producer-properties:
+            key.serializer: org.apache.kafka.common.serialization.ByteArraySerializer
+            value.serializer: org.apache.kafka.common.serialization.ByteArraySerializer
+          brokers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    openfeign:
+      circuitbreaker:
+        enabled: true
+      client:
+        config:
+          user-service:
+            loggerLevel: BASIC
+            connect-timeout: 1000
+            read-timeout: 2000
+
+eureka:
+  client:
+    enabled: ${EUREKA_ENABLED:true}
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+
+logging:
+  level:
+    com.example.sporty.features.exerciseMatching.client.UserServiceClient: DEBUG
+
+resilience4j:
+  circuitbreaker:
+      configs:
+        default:
+          ignoreExceptions:
+            - 'feign.FeignException$NotFound'
+            - 'feign.FeignException$InternalServerError'
+  timelimiter:
+    configs:
+      default:
+        timeoutDuration: 4s
+
+saga:
+  fail-cleanup: ${SAGA_FAIL_CLEANUP:false}
+  outbox:
+    enabled: ${MATCH_OUTBOX_ENABLED:true}
+    publish-delay-ms: 1000

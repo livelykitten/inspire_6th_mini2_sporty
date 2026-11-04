@@ -1,0 +1,14 @@
+# 빌드 컨텍스트(backend/)에서 뺄 것. 이미지에 .env 같은 비밀값이 들어가면 안 된다.
+**/build
+**/.gradle
+**/bin
+**/out
+**/.env
+**/.env.*
+!**/.env.example
+**/*.log
+**/Dockerfile
+.dockerignore
+
+# 1차 모놀리스는 서비스 이미지에 필요 없다.
+sporty

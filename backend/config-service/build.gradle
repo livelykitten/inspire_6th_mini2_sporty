@@ -1,0 +1,6 @@
+dependencies {
+	implementation 'org.springframework.cloud:spring-cloud-config-server'
+	// 전 서비스 Eureka 등록 (요구사항 MSA-02). 다른 서비스는 Eureka 로 찾지 않고 8888 주소로 설정을 받음
+	implementation 'org.springframework.cloud:spring-cloud-starter-netflix-eureka-client'
+	implementation 'org.springframework.cloud:spring-cloud-starter-bus-kafka'
+}

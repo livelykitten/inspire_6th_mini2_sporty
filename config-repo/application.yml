@@ -1,0 +1,27 @@
+# 모든 서비스가 Config 서버에서 공통으로 받는 설정.
+# 서비스별 설정은 {spring.application.name}.yml (예: user-service.yml). 배포용 암호화 값은 {서비스}-dev.yml 에 '{cipher}...' 로 (W-24 · W-25, README.md)
+# W-05 확인용 키: GET http://localhost:8888/application/default 응답에 보이면 정상
+sporty:
+  config-check: config-repo loaded
+
+spring:
+  reactor:
+    context-propagation: auto
+  cloud:
+    openfeign:
+      micrometer:
+        enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLING_PROBABILITY:1.0}
+    propagation:
+      type: w3c
+  zipkin:
+    tracing:
+      endpoint: ${ZIPKIN_ENDPOINT:http://localhost:9411/api/v2/spans}

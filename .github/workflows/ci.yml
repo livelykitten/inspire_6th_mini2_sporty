@@ -1,0 +1,138 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: backend (${{ matrix.service }})
+    runs-on: ubuntu-latest
+    # wip 서비스는 1차 코드의 서비스 경계 import 가 남아 있어 아직 컴파일되지 않는다 (docs/msa-split-todo.md).
+    # 해당 서비스의 이동 PR(W-07 ~ W-10)이 머지되면 그 줄의 wip 를 지운다.
+    # 잡 단위 continue-on-error 는 워크플로만 통과시키고 PR 의 체크는 빨갛게 남기므로, 컴파일 스텝에서만 실패를 허용한다.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { service: gateway-service, wip: false }
+          - { service: discovery-service, wip: false }
+          - { service: config-service, wip: false }
+          - { service: facility-service, wip: false }
+          - { service: user-service, wip: false } # W-07 머지됨 (PR #12 · #13)
+          - { service: match-service, wip: false } # W-08
+          - { service: ai-service, wip: false } # W-10 머지됨 (PR #24)
+          - { service: notification-service, wip: false } # W-49 (PR #76)
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: 코드 내려받기
+        uses: actions/checkout@v4
+
+      - name: JDK 17 설치
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Gradle 설정
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: 컴파일
+        id: compile
+        continue-on-error: ${{ matrix.wip }}
+        run: ./gradlew :${{ matrix.service }}:compileJava :${{ matrix.service }}:compileTestJava
+
+      - name: wip 서비스 컴파일 실패 알림
+        if: ${{ matrix.wip && steps.compile.outcome == 'failure' }}
+        run: echo "::warning title=wip::${{ matrix.service }} 는 아직 컴파일되지 않습니다 (이동 PR 머지 후 wip 를 지운다)"
+
+  # master Dockerfile(backend/Dockerfile)은 서비스별 Dockerfile 을 이어 붙인 생성물이다.
+  # 서비스 Dockerfile 만 고치고 생성 스크립트를 안 돌렸으면 여기서 실패한다.
+  dockerfile-master:
+    name: dockerfile (master 최신 여부)
+    runs-on: ubuntu-latest
+    steps:
+      - name: 코드 내려받기
+        uses: actions/checkout@v4
+
+      - name: master 가 서비스별 Dockerfile 과 같은지 확인
+        run: bash scripts/gen-master-dockerfile.sh --check
+
+  # 서비스별 이미지가 실제로 빌드되는지 확인한다 (push 하지 않는다). wip 는 새 서비스가 아직 컴파일되지 않을 때만 쓴다.
+  docker:
+    name: docker (${{ matrix.service }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { service: gateway-service, wip: false }
+          - { service: discovery-service, wip: false }
+          - { service: config-service, wip: false }
+          - { service: facility-service, wip: false }
+          - { service: user-service, wip: false }
+          - { service: match-service, wip: false }
+          - { service: ai-service, wip: false } # W-10 머지됨 (PR #24)
+          - { service: notification-service, wip: false } # W-49 (PR #76)
+    steps:
+      - name: 코드 내려받기
+        uses: actions/checkout@v4
+
+      - name: Buildx 설정
+        uses: docker/setup-buildx-action@v3
+
+      - name: 이미지 빌드 (master target)
+        id: build
+        continue-on-error: ${{ matrix.wip }}
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          file: backend/Dockerfile
+          target: ${{ matrix.service }}
+          build-contexts: |
+            config-repo=config-repo
+          push: false
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,scope=${{ matrix.service }},mode=max
+
+      - name: wip 서비스 이미지 빌드 실패 알림
+        if: ${{ matrix.wip && steps.build.outcome == 'failure' }}
+        run: echo "::warning title=wip::${{ matrix.service }} 이미지는 아직 빌드되지 않습니다 (이동 PR 머지 후 wip 를 지운다)"
+
+  frontend:
+    name: frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: 코드 내려받기
+        uses: actions/checkout@v4
+
+      - name: Node 설치
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 의존성 설치
+        run: npm ci
+
+      - name: 테스트
+        run: npm test -- --watchAll=false
+        env:
+          CI: "true"
+
+      - name: 빌드
+        run: npm run build
+        env:
+          CI: "false"

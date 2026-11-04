@@ -1,0 +1,64 @@
+server:
+  port: 8003
+
+spring:
+  application:
+    name: facility-service
+  task:
+    scheduling:
+      pool:
+        size: 2
+  config:
+    import:
+      # 공통 backend/.env 를 먼저, 서비스 폴더 .env 를 나중에 읽어 서비스별 값이 이긴다 (나중 import 가 우선, #61)
+      - "optional:file:../.env[.properties]"
+      - "optional:file:./.env[.properties]"
+      - "optional:configserver:"
+  datasource:
+    driver-class-name: ${DB_DRIVER:org.mariadb.jdbc.Driver}
+    url: ${DB_URL:jdbc:mariadb://localhost:3308/facility_db}
+    username: ${DB_USERNAME:facility_svc}
+    password: ${DB_PASSWORD:facility_svc}
+  jpa:
+    hibernate:
+      ddl-auto: update
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      properties:
+        max.block.ms: 3000
+        request.timeout.ms: 3000
+        delivery.timeout.ms: 5000
+
+  cloud:
+    stream:
+      kafka:
+        binder:
+          producer-properties:
+            key.serializer: org.apache.kafka.common.serialization.ByteArraySerializer
+            value.serializer: org.apache.kafka.common.serialization.ByteArraySerializer
+
+eureka:
+  client:
+    enabled: ${EUREKA_ENABLED:true}
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+facility:
+  openapi:
+    service-key: ${PUBLIC_DATA_API_KEY:}
+    base-url: ${PUBLIC_DATA_API_URL:}
+    service-name: ListPublicReservationSport
+    data-type: json
+  sync:
+    cron: "0 0 3 * * *"
+    zone: "Asia/Seoul"
+    on-startup: ${FACILITY_SYNC_ON_STARTUP:true}

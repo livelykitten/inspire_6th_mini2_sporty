@@ -1,0 +1,21 @@
+dependencies {
+	implementation 'org.springframework.boot:spring-boot-starter-security'
+	implementation 'org.springframework.boot:spring-boot-starter-web'
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.7.0'
+	implementation 'org.springframework.cloud:spring-cloud-starter-openfeign'
+	implementation 'io.github.openfeign:feign-micrometer'
+	implementation 'org.springframework.cloud:spring-cloud-starter-loadbalancer'
+	implementation 'org.springframework.cloud:spring-cloud-starter-circuitbreaker-resilience4j'
+	implementation 'org.springframework.ai:spring-ai-starter-model-openai'
+	implementation 'org.springframework.cloud:spring-cloud-starter-netflix-eureka-client'
+	implementation 'org.springframework.cloud:spring-cloud-starter-config'
+	implementation 'org.springframework.cloud:spring-cloud-starter-bus-kafka'
+	testRuntimeOnly 'com.h2database:h2'
+}
+
+dependencyManagement {
+	imports {
+		mavenBom "org.springframework.ai:spring-ai-bom:1.0.0"
+	}
+}
