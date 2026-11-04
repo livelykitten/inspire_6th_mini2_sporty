@@ -113,6 +113,8 @@ services:
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --list
 
   # W-33 로컬 분산 추적. 메모리 저장이므로 재시작 시 추적 데이터는 초기화된다.
+  # 서비스를 IDE 로 띄우면 기본 전송 주소(localhost:9411)가 그대로 맞다. 서비스를 컨테이너로 띄울 때(compose.app.yaml)는
+  # 컨테이너 안의 localhost 가 자기 자신이므로 서비스마다 ZIPKIN_ENDPOINT=http://zipkin:9411/api/v2/spans 를 넘겨야 한다.
   zipkin:
     image: openzipkin/zipkin:3
     ports:
