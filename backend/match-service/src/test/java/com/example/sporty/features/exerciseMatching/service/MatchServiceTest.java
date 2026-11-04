@@ -2,6 +2,8 @@ package com.example.sporty.features.exerciseMatching.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verify;
@@ -19,6 +21,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
@@ -29,6 +32,7 @@ import com.example.sporty.features.commons.exception.exerciseMatching.MatchOwner
 import com.example.sporty.features.commons.exception.exerciseMatching.MatchParticipantNotFoundException;
 import com.example.sporty.features.commons.exception.matches.ServiceNotFoundException;
 import com.example.sporty.features.commons.util.SportType;
+import com.example.sporty.features.exerciseMatching.withdrawal.WithdrawalCleanupResult;
 import com.example.sporty.features.exerciseMatching.domain.dto.MatchCreateRequestDto;
 import com.example.sporty.features.exerciseMatching.domain.dto.MatchDetailResponseDto;
 import com.example.sporty.features.exerciseMatching.client.MemberLookup;
@@ -318,6 +322,79 @@ class MatchServiceTest {
         if (startOffsetSeconds <= 0) {
             verify(matchParticipantRepository, never()).countByMatch_Id(301L);
         }
+    }
+
+    // 탈퇴 Saga 설계 §3.2 5번 / EV-03: 생성 매치는 삭제(deleted), 참가 매치는 본인 기록만 삭제(left)하고 결과 ID를 돌려준다.
+    @Test
+    @DisplayName("[탈퇴 정리] OWNER 매치는 삭제하고 PARTICIPANT 매치는 본인 기록만 삭제하며 EV-03용 ID 목록을 반환한다")
+    void removeMatchesForWithdrawalDeletesOwnedAndLeavesJoined() {
+        MatchEntity owned = MatchEntity.builder().id(401L).build();
+        MatchEntity joined = MatchEntity.builder().id(402L).startAt(LocalDateTime.now().plusDays(1))
+                .status(MatchStatus.RECRUITING).build();
+        MatchParticipantEntity ownerRow = withdrawalParticipant(owned, 1L, MatchParticipantRole.OWNER);
+        MatchParticipantEntity joinedRow = withdrawalParticipant(joined, 1L, MatchParticipantRole.PARTICIPANT);
+        when(matchParticipantRepository.findAllByUserIdOrderByMatch_StartAtDescMatch_IdDesc(1L))
+                .thenReturn(List.of(ownerRow, joinedRow));
+        when(matchRepository.findByIdForUpdate(401L)).thenReturn(Optional.of(owned));
+        when(matchRepository.findByIdForUpdate(402L)).thenReturn(Optional.of(joined));
+        when(matchParticipantRepository.findByMatch_IdAndUserId(401L, 1L)).thenReturn(Optional.of(ownerRow));
+        when(matchParticipantRepository.findByMatch_IdAndUserId(402L, 1L)).thenReturn(Optional.of(joinedRow));
+
+        WithdrawalCleanupResult result = matchService.removeMatchesForWithdrawal(1L);
+
+        assertThat(result.deletedMatchIds()).containsExactly(401L);
+        assertThat(result.leftMatchIds()).containsExactly(402L);
+        verify(matchParticipantRepository).deleteAllByMatch_Id(401L);
+        verify(matchRepository).delete(owned);
+        verify(matchParticipantRepository).delete(joinedRow);
+        verify(matchRepository, never()).delete(joined);
+        verifyNoInteractions(memberLookup);
+    }
+
+    @Test
+    @DisplayName("[탈퇴 정리] 여러 매치는 참가/탈퇴 API와 같은 매치 잠금을 ID 오름차순으로 얻고 결과도 같은 순서다")
+    void removeMatchesForWithdrawalLocksMatchesInIdOrder() {
+        MatchEntity first = MatchEntity.builder().id(501L).startAt(LocalDateTime.now().plusDays(1))
+                .status(MatchStatus.RECRUITING).build();
+        MatchEntity second = MatchEntity.builder().id(502L).startAt(LocalDateTime.now().plusDays(1))
+                .status(MatchStatus.RECRUITING).build();
+        // 조회 순서는 시작 시각 내림차순이라 ID 순서와 다르다.
+        MatchParticipantEntity secondRow = withdrawalParticipant(second, 1L, MatchParticipantRole.PARTICIPANT);
+        MatchParticipantEntity firstRow = withdrawalParticipant(first, 1L, MatchParticipantRole.PARTICIPANT);
+        when(matchParticipantRepository.findAllByUserIdOrderByMatch_StartAtDescMatch_IdDesc(1L))
+                .thenReturn(List.of(secondRow, firstRow));
+        when(matchRepository.findByIdForUpdate(501L)).thenReturn(Optional.of(first));
+        when(matchRepository.findByIdForUpdate(502L)).thenReturn(Optional.of(second));
+        when(matchParticipantRepository.findByMatch_IdAndUserId(501L, 1L)).thenReturn(Optional.of(firstRow));
+        when(matchParticipantRepository.findByMatch_IdAndUserId(502L, 1L)).thenReturn(Optional.of(secondRow));
+
+        WithdrawalCleanupResult result = matchService.removeMatchesForWithdrawal(1L);
+
+        InOrder order = inOrder(matchRepository);
+        // 각 매치는 정리 대상 확인과 탈퇴 처리에서 두 번 잠기므로 횟수가 아니라 순서만 확인한다.
+        order.verify(matchRepository, atLeastOnce()).findByIdForUpdate(501L);
+        order.verify(matchRepository, atLeastOnce()).findByIdForUpdate(502L);
+        assertThat(result.leftMatchIds()).containsExactly(501L, 502L);
+        assertThat(result.deletedMatchIds()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("[탈퇴 정리] 참가 이력이 없으면 매치를 잠그거나 삭제하지 않고 빈 결과를 반환한다")
+    void removeMatchesForWithdrawalDoesNothingWithoutParticipation() {
+        when(matchParticipantRepository.findAllByUserIdOrderByMatch_StartAtDescMatch_IdDesc(1L))
+                .thenReturn(List.of());
+
+        WithdrawalCleanupResult result = matchService.removeMatchesForWithdrawal(1L);
+
+        assertThat(result.deletedMatchIds()).isEmpty();
+        assertThat(result.leftMatchIds()).isEmpty();
+        verify(matchParticipantRepository).findAllByUserIdOrderByMatch_StartAtDescMatch_IdDesc(1L);
+        verifyNoInteractions(matchRepository, memberLookup);
+        verifyNoMoreInteractions(matchParticipantRepository);
+    }
+
+    private MatchParticipantEntity withdrawalParticipant(MatchEntity match, Long userId, MatchParticipantRole role) {
+        return MatchParticipantEntity.builder().match(match).userId(userId).role(role).build();
     }
 
     private MatchParticipantEntity participant(Long userId, MatchParticipantRole role) {
