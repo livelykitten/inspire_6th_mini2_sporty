@@ -15,7 +15,7 @@ Config 서버(`config-service`, 8888)가 서비스에 나눠 주는 설정 파�
 
 ## 비밀값 규칙 (W-25, 요구사항 NFR-03 · OPT-02)
 - 이 폴더에는 평문 비밀값을 넣지 않는다.
-- **DB 비밀번호 3개 · JWT 키는 `'{cipher}...'`** 로 넣었다. Config 서버가 `ENCRYPT_KEY` 로 풀어서 서비스에 넘긴다. 로컬 `.env` 에는 `ENCRYPT_KEY` 만 있으면 된다.
+- **DB 비밀번호 3개 · JWT 키는 `'{cipher}...'`** 로 넣었다. Config 서버가 `ENCRYPT_KEY` 로 풀어서 서비스에 넘긴다. `ENCRYPT_KEY` 는 IDE · Gradle 실행이면 `backend/.env`, Compose 면 루트 `.env` 에 둔다 (#61, 두 `.env.example` 에 같은 값).
 - user · gateway 는 같은 JWT 암호문을 받으므로 키를 따로 맞출 필요가 없다.
 - 지금 암호문은 `.env.example` 의 **로컬 전용 키 · 로컬 전용 값**으로 만든 것이다 (공개돼 있어도 되는 값).
 - 개인 API 키(`OPEN_AI_KEY` · `PUBLIC_DATA_API_KEY`)는 로컬 키가 공개라 암호문으로 넣어도 풀린다 → `${환경변수}` 로 두고 각자 `.env` 에.
@@ -23,7 +23,7 @@ Config 서버(`config-service`, 8888)가 서비스에 나눠 주는 설정 파�
 - DB 비밀번호 암호문은 compose.yaml 의 DB 계정(user_svc · match_svc · facility_svc)에 맞춰져 있다. 비밀번호가 다른 DB 를 쓰려면 암호문을 바꾸지 말고 compose.yaml 의 DB 를 쓴다.
 
 ## 암호화하는 법
-Config 서버를 띄운 상태(`.env` 에 `ENCRYPT_KEY` 있음)에서:
+Config 서버를 띄운 상태(`backend/.env` 또는 루트 `.env` 에 `ENCRYPT_KEY` 있음)에서:
 
 ```bash
 curl -s -X POST http://localhost:8888/encrypt -H "Content-Type: text/plain" -d "넣을 값"
