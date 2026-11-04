@@ -38,14 +38,29 @@ h2_duplicate_withdraw_code() {
   esac
 }
 
+# match 를 실패 주입 설정(SAGA_FAIL_CLEANUP)으로 다시 띄운다. compose.app.yaml 이 이 값을 match 의 saga.fail-cleanup 으로 넘긴다.
+h_restart_match() { # true|false
+  SAGA_FAIL_CLEANUP="$1" $COMPOSE_CMD up -d match-service >/dev/null 2>&1
+  wait_service_healthy match-service 150 && wait_gateway_stable 40 150
+}
+
 h3_compensation_on_failure() {
-  # 보상 시나리오는 Config 의 saga.fail-cleanup=true 로 match 쪽 정리를 일부러 실패시킨다 (W-32).
-  local cfg
-  cfg="$(curl -s -m 5 http://127.0.0.1:8888/match-service/default 2>/dev/null || true)"
-  case "$cfg" in
-    *saga.fail-cleanup*) fail "구현 필요: 보상 시나리오 자동화 (saga.fail-cleanup 이 생기면 설정 변경 · 재기동 · 탈퇴 · ACTIVE 복원 확인)" ;;
-    *) fail "대기: W-32 (saga.fail-cleanup 설정과 보상 이벤트 EV-04 미구현)" ;;
-  esac
+  # 보상 시나리오 (W-32): match 쪽 정리를 일부러 실패시키면 재시도 소진 → EV-04 → user 가 PENDING 에서 ACTIVE 로 복원한다.
+  need_docker || return
+  h_restart_match true || { fail "실패 주입 설정으로 match-service 재기동 실패"; h_restart_match false; return; }
+  if new_user h3; then
+    req DELETE /api/users/me -t "$U_TOKEN" -d "{\"password\":\"$U_PW\"}"
+    expect_code "202|204" "탈퇴 요청"
+    # 로그인은 PENDING · WITHDRAWN 에서 막히고 ACTIVE 에서만 된다. 다시 200 이 되면 보상으로 복원된 것이다.
+    local i
+    for i in $(seq 1 30); do
+      sleep 2
+      req POST /api/auth/login -d "{\"email\":\"$U_EMAIL\",\"password\":\"$U_PW\"}"
+      [ "$HTTP_CODE" = "200" ] && break
+    done
+    expect_code 200 "보상 뒤 로그인 (ACTIVE 복원)"
+  fi
+  h_restart_match false || fail "실패 주입 해제 뒤 match-service 복구 실패"
 }
 
 tc 2 "TC-04 USR-04"  "탈퇴 요청 → 로그인 · 토큰 차단"                         h1_withdraw_success
