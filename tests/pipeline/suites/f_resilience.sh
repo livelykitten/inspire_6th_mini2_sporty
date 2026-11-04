@@ -92,7 +92,17 @@ f4_user_down_join_503() {
   compose start user-service >/dev/null 2>&1
   wait_service_healthy user-service 150 || fail "user-service 복구 실패"
   wait_user_route 150 || fail "게이트웨이가 user-service 로 다시 라우팅하지 못함"
-  req GET "/api/matches/$mid"
+  # 게이트웨이 → user 가 살아나도 match → user 는 Eureka 갱신이 늦어 30초쯤 더 걸릴 수 있다.
+  # 매치 상세의 참가자 닉네임은 match 가 user 에서 받아 오므로(실패하면 비움), 닉네임이 다시 보일 때까지 기다린다.
+  # 뒤 스위트(G · H)가 user 재기동 직후의 503 에 걸리지 않게 하기 위해서다.
+  local back=0
+  while :; do
+    req GET "/api/matches/$mid"
+    [ "$HTTP_CODE" = "200" ] && [ -n "$(jget '.participants[0].nickname')" ] && break
+    [ "$back" -ge 120 ] && { fail "user 재기동 뒤 120초 안에 match → user 연결이 복구되지 않음"; break; }
+    sleep 3; back=$((back + 3))
+  done
+  note "user 재기동 뒤 match → user 복구 ${back}초"
   expect_code 200 "user 복구 뒤 매치 상세"
   expect_eq "$before" "$(jget .currentParticipantCount)" "재조회 참가 인원 (변화 없어야 함)"
 }
