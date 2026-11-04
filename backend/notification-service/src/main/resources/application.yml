@@ -53,6 +53,9 @@ eureka:
       defaultZone: ${EUREKA_URL:http://localhost:8761/eureka}
 
 management:
+  health:
+    mail:
+      enabled: false
   endpoints:
     web:
       exposure:
