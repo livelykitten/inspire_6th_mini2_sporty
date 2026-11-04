@@ -41,6 +41,12 @@ spring:
 
 AI 서비스는 로컬 `.env`에서 `OPEN_AI_KEY`를 공급합니다. 서비스 자체 `application.yml`의 중복 API 키 선언은 제거된 상태이므로, 현재 실행 가이드는 Config Server 사용을 전제로 합니다.
 
+> **주의: Config Server 없이는 키가 비어 있습니다.** `application.yml` 의 `spring.config.import` 에 `optional:configserver:` 가 들어 있어 Config Server(8888)가 꺼져 있어도 서비스는 에러 없이 기동하지만, `spring.ai.openai.api-key` 는 `config-repo/ai-service.yml` 에서만 내려오므로 **빈 값**이 됩니다. 이 경우 OpenAI 를 호출하는 요청(AI-01 · AI-03 추천 · AI-02 조건 추출)만 실패합니다. 키가 비었는지 의심되면 `curl http://localhost:8888/ai-service/default` 에 `spring.ai.openai.api-key` 가 보이는지 먼저 확인하세요.
+
+### Docker Compose 로 실행할 때
+
+Compose 로 띄울 때는 `backend/ai-service/.env` 가 아니라 **저장소 루트 `.env`** 의 `OPEN_AI_KEY` 를 씁니다 (`cp .env.example .env` 후 값 입력). Compose 가 이 값을 컨테이너 환경변수로 넣어 주면 Config Server 가 내려준 `${OPEN_AI_KEY:}` 가 그 값으로 채워집니다. 전체 스택 Compose(`compose.app.yaml`)는 W-34 통합 PR 에서 들어오며, 그 전에는 위의 로컬 실행 방식을 따릅니다.
+
 키와 `.env`는 커밋하지 않습니다. 배포용 암호화 설정은 [Config 가이드](../../config-repo/README.md)를 따릅니다.
 
 ## 2. Postman으로 API 확인
