@@ -76,23 +76,28 @@ docker compose down -v                   # 중지 + 데이터 초기화
 
 ## 서비스 이미지 빌드 (W-23)
 
-서비스 7개가 `backend/Dockerfile` 하나를 공용으로 쓴다. 빌드 컨텍스트는 `backend/` 이고 서비스는 build arg 로 고른다 (멀티스테이지: JDK 17 로 `bootJar` → JRE 17 비루트 실행).
+서비스마다 자기 Dockerfile 을 가진다 (멀티스테이지: JDK 17 로 `bootJar` → JRE 17 비루트 실행). 빌드 컨텍스트는 항상 `backend/` 이다 (`settings.gradle` 이 7개 모듈을 모두 include 하기 때문).
+
+| 서비스 | 포트 | 담당 · 작업 위치 (원본) |
+|---|---|---|
+| gateway-service | 8000 | 김우석 · `backend/gateway-service/Dockerfile` |
+| discovery-service | 8761 | 김우석 · `backend/discovery-service/Dockerfile` |
+| config-service | 8888 | 김우석 · `backend/config-service/Dockerfile` |
+| user-service | 8001 | 송석주 · `backend/user-service/Dockerfile` |
+| match-service | 8002 | 김예림 · `backend/match-service/Dockerfile` |
+| facility-service | 8003 | 이서현 · `backend/facility-service/Dockerfile` |
+| ai-service | 8004 | 서정운 · `backend/ai-service/Dockerfile` |
 
 ```bash
-docker build -f backend/Dockerfile --build-arg SERVICE=gateway-service --build-arg PORT=8000   -t sporty/gateway-service:local backend
+docker build -f backend/user-service/Dockerfile -t sporty/user-service:local backend
+# config-service 만 저장소 루트의 config-repo/ 가 필요해서 named context 를 하나 더 준다
+docker build -f backend/config-service/Dockerfile --build-context config-repo=config-repo -t sporty/config-service:local backend
 ```
 
-| SERVICE | PORT |
-|---|---|
-| gateway-service | 8000 |
-| discovery-service | 8761 |
-| config-service | 8888 |
-| user-service | 8001 |
-| match-service | 8002 |
-| facility-service | 8003 |
-| ai-service | 8004 |
-
-- 지금은 경계 import 가 남은 user · match · ai 는 `bootJar` 가 컴파일 단계에서 실패해 이미지가 만들어지지 않는다. 서비스 이동(W-07, W-08, W-10)이 끝나면 같은 명령으로 빌드된다.
+- **담당자는 자기 서비스 Dockerfile 만 고친다.** 각 파일 맨 위 주석에 담당자 · 작업 위치 · 빌드 명령이 적혀 있다. 브랜치는 `feat/{서비스}-…`, 리뷰어는 CODEOWNERS 로 담당자 + 반정욱이 자동 지정된다.
+- **master(`backend/Dockerfile`)는 생성물이라 직접 고치지 않는다.** 서비스별 Dockerfile 7개를 이어 붙인 파일이고, 서비스 Dockerfile 을 고친 뒤 `bash scripts/gen-master-dockerfile.sh` 를 실행해 같이 커밋한다 (CI 가 `--check` 로 최신 여부를 검사한다).
+- master 는 컨테이너를 실행하지 않는다. `--target {서비스}` 로 이미지를 뽑는 진입점이고, 전체를 한 번에 띄우는 앱 Compose 는 W-34 선행 PR 에서 추가한다.
+- ai-service 는 PR #24 가 머지되기 전까지 컴파일되지 않아 이미지가 만들어지지 않는다.
 - 이미지 안에는 `.env` 를 넣지 않는다 (`backend/.dockerignore`). 설정은 환경변수로 넘긴다.
 - JVM 메모리는 `JAVA_TOOL_OPTIONS` 의 `MaxRAMPercentage=75` 로 컨테이너 한도에 맞춘다. 바꾸려면 `-e JAVA_TOOL_OPTIONS=...` 로 덮어쓴다.
 

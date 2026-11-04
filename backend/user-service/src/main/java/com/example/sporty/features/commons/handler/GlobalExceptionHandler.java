@@ -28,6 +28,9 @@ import com.example.sporty.features.commons.exception.ai.AiDraftException;
 import com.example.sporty.features.commons.exception.ai.AiRecommendException;
 import com.example.sporty.features.commons.exception.ai.AiSearchException;
 
+import com.example.sporty.features.commons.exception.users.WithdrawalAlreadyPendingException;
+import com.example.sporty.features.commons.exception.users.UserAlreadyWithdrawnException;
+
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
@@ -260,4 +263,25 @@ public class GlobalExceptionHandler {
                         .build());
     }
 
+    @ExceptionHandler(WithdrawalAlreadyPendingException.class)
+    public ResponseEntity<ErrorResponse> handleWithdrawalAlreadyPending(
+            WithdrawalAlreadyPendingException exception
+    ) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.builder()
+                        .message(exception.getMessage())
+                        .code("WITHDRAWAL_ALREADY_PENDING")
+                        .build());
+    }
+
+    @ExceptionHandler(UserAlreadyWithdrawnException.class)
+    public ResponseEntity<ErrorResponse> handleUserAlreadyWithdrawn(
+            UserAlreadyWithdrawnException exception
+    ) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(ErrorResponse.builder()
+                        .message(exception.getMessage())
+                        .code("USER_ALREADY_WITHDRAWN")
+                        .build());
+    }
 }

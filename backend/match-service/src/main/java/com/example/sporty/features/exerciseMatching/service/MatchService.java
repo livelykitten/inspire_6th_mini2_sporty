@@ -4,8 +4,15 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.example.sporty.features.commons.exception.matches.MatchUserNotFoundException;
+import com.example.sporty.features.commons.exception.users.UserNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
+import com.example.sporty.features.exerciseMatching.withdrawal.MatchUserGuardService;
+import com.example.sporty.features.exerciseMatching.withdrawal.WithdrawalCleanupResult;
 
 import com.example.sporty.features.commons.exception.exerciseMatching.MatchDeleteForbiddenException;
 import com.example.sporty.features.commons.exception.exerciseMatching.MatchModifyForbiddenException;
@@ -50,11 +57,17 @@ public class MatchService {
     private final MatchParticipantRepository matchParticipantRepository;
     private final MemberLookup memberLookup;
     private final FacilityServiceSnapshotRepository facilityServiceSnapshotRepository;
+    private final MatchUserGuardService userGuards;
+    private final PlatformTransactionManager transactionManager;
 
     // [EM-08] 내 매치 목록 조회
     public List<MyMatchResponseDto> getMyMatches(Long userId) {
         // 1. 로그인 회원 확인
-        memberLookup.validateActive(userId);
+        try {
+            memberLookup.validateActive(userId);
+        } catch (MatchUserNotFoundException e) {
+            throw new UserNotFoundException();
+        }
 
         // 2. 본인이 생성하거나 참여한 매치 조회
         List<MatchParticipantEntity> participants = matchParticipantRepository
@@ -108,33 +121,44 @@ public class MatchService {
 
     /** [USR-04] 회원탈퇴: 생성한 매치는 전체 삭제, 다른 매치에서는 본인 참가 기록만 삭제한다. */
     @Transactional
-    public void removeMatchesForWithdrawal(Long userId) {
+    public WithdrawalCleanupResult removeMatchesForWithdrawal(Long userId) {
         List<Long> matchIds = matchParticipantRepository
                 .findAllByUserIdOrderByMatch_StartAtDescMatch_IdDesc(userId).stream()
                 .map(participant -> participant.getMatch().getId())
                 .distinct().sorted().toList();
 
         // 참가/탈퇴 API와 같은 매치 잠금을 사용하고, 여러 매치는 ID 순으로 잠근다.
+        List<Long> deleted = new ArrayList<>();
+        List<Long> left = new ArrayList<>();
         for (Long matchId : matchIds) {
             if (matchRepository.findByIdForUpdate(matchId).isEmpty()) continue;
             var participation = matchParticipantRepository.findByMatch_IdAndUserId(matchId, userId);
             if (participation.isEmpty()) continue;
             if (participation.get().getRole() == MatchParticipantRole.OWNER) {
                 deleteMatch(matchId, userId);
+                deleted.add(matchId);
             } else {
                 leaveMatch(matchId, userId);
+                left.add(matchId);
             }
         }
+        return new WithdrawalCleanupResult(List.copyOf(deleted), List.copyOf(left));
     }
 
     // EM-06: 참가자 저장과 정원 도달 시 모집 마감을 하나의 트랜잭션으로 처리한다.
-    @Transactional
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public MatchParticipantResponseDto joinMatch(Long matchId, Long userId) {
+        // Preserve missing-match precedence, but do not hold its lock while calling Feign.
+        if (!matchRepository.existsById(matchId)) throw new MatchNotFoundException();
+        memberLookup.validateActive(userId);
+        return new TransactionTemplate(transactionManager).execute(status -> joinMatchLocked(matchId, userId));
+    }
+
+    private MatchParticipantResponseDto joinMatchLocked(Long matchId, Long userId) {
+        userGuards.requireUnblocked(userId); // Guard before match lock: same order as EV-02.
         MatchEntity match = matchRepository.findByIdForUpdate(matchId)
                 .orElseThrow(MatchNotFoundException::new);
         
-        memberLookup.validateActive(userId);
-
         // OWNER도 이미 등록된 참가자이므로 역할과 관계없이 중복 참여를 막는다.
         if (matchParticipantRepository.existsByMatch_IdAndUserId(matchId, userId)) {
             throw new MatchAlreadyJoinedException();
@@ -190,12 +214,17 @@ public class MatchService {
         matchRepository.delete(match);
     }
 
-    @Transactional 
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public Long createMatch(MatchCreateRequestDto req, Long userId) {
 
         System.out.println("debug >> MatchService.createMatch(), req: " + req);
 
         memberLookup.validateActive(userId);
+        return new TransactionTemplate(transactionManager).execute(status -> createMatchLocked(req, userId));
+    }
+
+    private Long createMatchLocked(MatchCreateRequestDto req, Long userId) {
+        userGuards.requireUnblocked(userId);
 
         // Validate the catalog before creating either match or participant records.
         FacilityServiceSnapshotEntity service = facilityServiceSnapshotRepository.findById(req.getServiceId())
