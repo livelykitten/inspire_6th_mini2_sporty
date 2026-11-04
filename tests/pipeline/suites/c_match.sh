@@ -74,8 +74,21 @@ c5_my_matches_and_delete() {
   expect_contains "MATCH_NOT_FOUND" "삭제 뒤 오류 코드"
 }
 
+c6_modify_non_owner_exact_error() {
+  new_user c6owner || return
+  create_match "c6-${RANDOM}" || { fail "매치 생성 실패"; return; }
+  local mid="$MATCH_ID"
+  local body="{\"title\":\"c6-forbidden\",\"description\":\"changed\",\"startAt\":\"$(future_ts start)\",\"endAt\":\"$(future_ts end)\",\"maxParticipant\":8,\"skillLevel\":\"BEGINNER\",\"genderGroup\":\"MIXED\"}"
+
+  new_user c6other || return
+  req PUT "/api/matches/$mid" -t "$U_TOKEN" -d "$body"
+  expect_code 403 "생성자가 아닌 사용자의 수정은 403"
+  expect_eq MATCH_MODIFY_FORBIDDEN "$(jget .code)" "생성자가 아닌 사용자의 수정 오류 코드"
+}
+
 tc 4 "TC-09 EM-01 · TC-11 EM-03"  "매치 생성 + 상세 조회"                 c1_create_and_detail
 tc 4 "TC-10 EM-02"                "매치 목록 · 검색 조건"                   c2_search_conditions
 tc 4 "TC-12 EM-04"                "매치 수정 (생성자만)"                    c3_modify_owner_only
 tc 4 "TC-14 EM-06 · TC-15 EM-07"  "매치 참여 · 참여 취소 (인원 반영)"      c4_join_and_leave
 tc 4 "TC-13 EM-05 · TC-16 EM-08"  "내 매치 목록 + 삭제 뒤 404"             c5_my_matches_and_delete
+tc 0 "W-38 EM-04 보완"             "비생성자 수정 → 403 + MATCH_MODIFY_FORBIDDEN" c6_modify_non_owner_exact_error
