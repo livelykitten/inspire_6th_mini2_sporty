@@ -233,6 +233,19 @@ create_match() { # 제목 [종목 FUTSAL] [serviceId 1] [maxParticipant 6]
   [ -n "$MATCH_ID" ]
 }
 
+# 장애 테스트(F 등) 직후에는 의존 서비스 회로가 아직 열려 있어 쓰기 요청이 잠시 5xx 일 수 있다.
+# 사전 준비용 매치 생성만 최대 90초 재시도한다 (검증 대상 요청에는 쓰지 않는다). 기다린 시간은 비고에 남는다.
+create_match_ready() { # create_match 와 같은 인자
+  local waited=0
+  until create_match "$@"; do
+    case "$HTTP_CODE" in 5??|000) ;; *) return 1 ;; esac
+    [ "$waited" -ge 90 ] && return 1
+    sleep 5; waited=$((waited + 5))
+  done
+  [ "$waited" -gt 0 ] && note "사전 매치 생성이 ${waited}초 뒤에 가능 (앞선 장애 테스트의 회복 대기)"
+  return 0
+}
+
 # ------------------------------------------------------------------ 결과 기록
 record() { # 스위트 점수 참조 이름 상태 메시지 대기 초
   mkdir -p "$RESULTS_DIR"

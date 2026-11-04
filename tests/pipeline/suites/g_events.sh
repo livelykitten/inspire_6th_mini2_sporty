@@ -28,7 +28,7 @@ g2_outbox_survives_kafka_outage() {
   has="$(db_query facility-db facility_svc facility_db "SHOW TABLES LIKE 'facility_outbox'")"
   [ -n "$has" ] || { fail "대기: W-18 (facility_outbox 테이블 없음, Outbox 발행 미구현)"; return; }
   new_user g2 || return
-  create_match "g2-${RANDOM}" || { fail "사전 매치 생성 실패"; return; }
+  create_match_ready "g2-${RANDOM}" || { fail "사전 매치 생성 실패"; return; }
   local mid="$MATCH_ID" name="g2-renamed-${RANDOM}" eid payload
   eid="$(new_uuid)"
   payload="$(event_json "$name" | sed "s/\"eventId\":\"[^\"]*\"/\"eventId\":\"$eid\"/")"
@@ -59,7 +59,7 @@ g2_outbox_survives_kafka_outage() {
 g3_event_updates_match_snapshot() {
   need_docker || return
   new_user g3 || return
-  create_match "g3-${RANDOM}" || { fail "사전 매치 생성 실패"; return; }
+  create_match_ready "g3-${RANDOM}" || { fail "사전 매치 생성 실패"; return; }
   local mid="$MATCH_ID" name="g3-renamed-${RANDOM}"
   # 키 "1" (serviceId) 로 이벤트를 직접 발행한다. 구독 쪽 (match-service) 만 검증한다.
   printf '1:%s\n' "$(event_json "$name")" | compose exec -T kafka sh -c \
