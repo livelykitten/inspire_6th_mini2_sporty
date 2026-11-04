@@ -7,7 +7,7 @@ spring:
     password: '{cipher}5b160fb40a97ef44b7b3b0b120644ddd09ea3b20c76cea5a1b9990c4085e4405'
   jpa:
     hibernate:
-      ddl-auto: create-drop
+      ddl-auto: update
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
 
@@ -15,7 +15,7 @@ spring:
 facility:
   openapi:
     service-key: ${PUBLIC_DATA_API_KEY:}
-    base-url: ${PUBLIC_DATA_API_URL:}
+    base-url: ${PUBLIC_DATA_API_URL:http://openapi.seoul.go.kr:8088/}
     service-name: ListPublicReservationSport
     data-type: json
   sync:

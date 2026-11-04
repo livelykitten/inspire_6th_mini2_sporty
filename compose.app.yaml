@@ -131,7 +131,7 @@ services:
       # 키가 없으면 기동 시 동기화가 실패하지만 서비스는 계속 뜬다.
       FACILITY_SYNC_ON_STARTUP: ${FACILITY_SYNC_ON_STARTUP:-true}
       PUBLIC_DATA_API_KEY: ${PUBLIC_DATA_API_KEY:-}
-      PUBLIC_DATA_API_URL: ${PUBLIC_DATA_API_URL:-}
+      PUBLIC_DATA_API_URL: ${PUBLIC_DATA_API_URL:-http://openapi.seoul.go.kr:8088/}
     ports:
       - "8003:8003"
     depends_on:
