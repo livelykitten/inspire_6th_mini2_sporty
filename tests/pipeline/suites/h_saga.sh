@@ -16,8 +16,14 @@ h1_withdraw_success() {
     sleep 2
   done
   case "$HTTP_CODE" in 400|401|403|404|409) ;; *) fail "탈퇴 뒤 로그인이 막히지 않음 (HTTP $HTTP_CODE)" ;; esac
-  req GET /api/users/me -t "$tok"
-  case "$HTTP_CODE" in 401|403|404) ;; *) fail "탈퇴 뒤 기존 토큰으로 내 정보 조회가 막히지 않음 (HTTP $HTTP_CODE)" ;; esac
+  # 로그인은 WITHDRAWAL_PENDING 에서도 막히지만, 내 정보 조회(USR-06)는 PENDING 동안 허용이 확정된 규약이다 (설계 문서 PR #23).
+  # 그래서 토큰 차단은 Saga 가 WITHDRAWN 으로 확정한 뒤부터이므로, 막힐 때까지 기다린 다음 확인한다.
+  for i in $(seq 1 20); do
+    req GET /api/users/me -t "$tok"
+    [ "$HTTP_CODE" != "200" ] && break
+    sleep 1
+  done
+  case "$HTTP_CODE" in 401|403|404) ;; *) fail "탈퇴 확정 뒤에도 기존 토큰으로 내 정보 조회가 막히지 않음 (HTTP $HTTP_CODE)" ;; esac
 }
 
 h2_duplicate_withdraw_code() {
