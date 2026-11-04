@@ -57,13 +57,17 @@ services:
         config-repo: ./config-repo
     image: sporty/config-service:local
     mem_limit: 512m
+    volumes:
+      - ./config-repo:/config-repo:ro
     environment:
       <<: *app-env
       ENCRYPT_KEY: ${ENCRYPT_KEY:-}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
     ports:
       - "8888:8888"
     depends_on:
       discovery-service: { condition: service_healthy }
+      kafka: { condition: service_healthy }
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8888/actuator/health"]
       <<: *health-actuator
@@ -152,10 +156,12 @@ services:
       <<: *app-env
       # 값이 비면 Spring AI 의 api-key 검증으로 기동이 실패한다. 키가 없어도 서비스가 뜨도록 더미를 둔다 (AI 호출만 실패).
       OPEN_AI_KEY: ${OPEN_AI_KEY:-not-set-dummy-key}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
     ports:
       - "8004:8004"
     depends_on:
       config-service: { condition: service_healthy }
+      kafka: { condition: service_healthy }
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8004/actuator/health"]
       <<: *health-actuator
