@@ -41,9 +41,11 @@ spring:
 
 AI 서비스는 로컬 `.env`에서 `OPEN_AI_KEY`를 공급합니다. 서비스 자체 `application.yml`의 중복 API 키 선언은 제거된 상태이므로, 현재 실행 가이드는 Config Server 사용을 전제로 합니다.
 
-`optional:configserver:`는 Config 연결 실패 자체를 허용합니다. 중앙 설정을 받지 못하면 API 키 매핑이 누락될 수 있고, `${OPEN_AI_KEY:}`의 값이 없으면 빈 값이 됩니다. 이때 실제 AI 기동은 Spring AI의 키 검증에서 실패할 수 있으므로 Config 응답과 키 주입을 함께 확인하세요.
+> **주의: Config Server 없이는 키가 비어 있습니다.** `application.yml` 의 `spring.config.import` 에 `optional:configserver:` 가 들어 있어 Config Server(8888)가 꺼져 있어도 서비스는 에러 없이 기동하지만, `spring.ai.openai.api-key` 는 `config-repo/ai-service.yml` 에서만 내려오므로 **빈 값**이 됩니다. 이 경우 OpenAI 를 호출하는 요청(AI-01 · AI-03 추천 · AI-02 조건 추출)만 실패합니다. 키가 비었는지 의심되면 `curl http://localhost:8888/ai-service/default` 에 `spring.ai.openai.api-key` 가 보이는지 먼저 확인하세요.
 
-Docker Compose로 AI 컨테이너를 실행할 때는 프로젝트 루트 `.env`의 `OPEN_AI_KEY`를 사용합니다. Compose의 `environment` 또는 `env_file`로 AI 컨테이너에 명시적으로 전달해야 하며, 루트 `.env`가 자동으로 모든 컨테이너에 주입되는 것은 아닙니다. 현재 루트 Compose는 인프라용이므로 AI 컨테이너 구성 시 이 전달 설정을 포함해야 합니다.
+### Docker Compose 로 실행할 때
+
+Compose 로 띄울 때는 `backend/ai-service/.env` 가 아니라 **저장소 루트 `.env`** 의 `OPEN_AI_KEY` 를 씁니다 (`cp .env.example .env` 후 값 입력). 루트 `.env` 가 모든 컨테이너에 자동으로 주입되는 것은 아니므로 Compose 의 `environment`(또는 `env_file`)로 AI 컨테이너에 `OPEN_AI_KEY` 를 명시적으로 넘겨야 하고, 그러면 Config Server 가 내려준 `${OPEN_AI_KEY:}` 가 그 값으로 채워집니다. 전체 스택 Compose(`compose.app.yaml`)는 W-34 통합 PR 에서 들어오며, 그 전에는 위의 로컬 실행 방식을 따릅니다.
 
 키와 `.env`는 커밋하지 않습니다. 배포용 암호화 설정은 [Config 가이드](../../config-repo/README.md)를 따릅니다.
 
@@ -135,8 +137,6 @@ CORS는 Gateway가 담당합니다. `Origin: http://localhost:3000`을 포함한
 ## 남은 작업 / GitHub 이슈 초안
 
 다음 항목은 실제 검증 결과를 붙여 완료 처리합니다. 이 문서 작성만으로 GitHub 이슈가 생성되지는 않습니다.
-
-W-20은 IN-03~05 실제 통합 검증 완료 전까지 닫지 않습니다. 이 설정 정리 PR에는 `Refs #<W-20 이슈 번호>`로만 연결하고 `Closes`/`Fixes`/`Resolves`로 자동 종료하지 않습니다.
 
 - [ ] **[W-20] 실제 회원·매치 서비스 통합 검증**: IN-03~05의 쿼리·날짜·enum·사용자 헤더·오류 응답 확인. 내 매치 목록이 개설·참가를 모두 포함하는지 확인.
 - [ ] **OpenAI 배포 키 중앙 암호화 전환**: Config 담당과 `ENCRYPT_KEY` 준비 후 `ai-service-dev.yml`에 `{cipher}` 값 반영, 실제 배포 프로필의 복호화·AI 호출 확인.
