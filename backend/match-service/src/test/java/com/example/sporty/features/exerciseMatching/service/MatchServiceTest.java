@@ -27,10 +27,13 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import com.example.sporty.features.commons.exception.exerciseMatching.MatchNotFoundException;
 import com.example.sporty.features.commons.exception.exerciseMatching.MatchOwnerCannotLeaveException;
 import com.example.sporty.features.commons.exception.exerciseMatching.MatchParticipantNotFoundException;
+import com.example.sporty.features.commons.exception.matches.ServiceNotFoundException;
 import com.example.sporty.features.commons.util.SportType;
+import com.example.sporty.features.exerciseMatching.domain.dto.MatchCreateRequestDto;
 import com.example.sporty.features.exerciseMatching.domain.dto.MatchDetailResponseDto;
 import com.example.sporty.features.exerciseMatching.client.MemberLookup;
 import com.example.sporty.features.exerciseMatching.client.MemberProfile;
+import com.example.sporty.features.exerciseMatching.domain.entity.FacilityServiceSnapshotEntity;
 import com.example.sporty.features.exerciseMatching.domain.entity.MatchEntity;
 import com.example.sporty.features.exerciseMatching.domain.entity.MatchParticipantEntity;
 import com.example.sporty.features.exerciseMatching.domain.enums.MatchParticipantRole;
@@ -44,6 +47,9 @@ import com.example.sporty.support.FacilityFixtures;
 
 @ExtendWith(MockitoExtension.class)
 class MatchServiceTest {
+    @Mock com.example.sporty.features.exerciseMatching.withdrawal.MatchUserGuardService userGuards;
+    @Mock org.springframework.transaction.PlatformTransactionManager transactionManager;
+
 
     @Mock
     private MatchRepository matchRepository;
@@ -59,6 +65,33 @@ class MatchServiceTest {
 
     @InjectMocks
     private MatchService matchService;
+
+    @Test
+    @DisplayName("[TC-EM01] 비활성 시설로 매치를 생성하면 SERVICE_NOT_FOUND로 처리한다")
+    void createMatchRejectsInactiveFacility() {
+        Long serviceId = 7L;
+        Long userId = 101L;
+        FacilityServiceSnapshotEntity inactiveFacility = FacilityServiceSnapshotEntity.builder()
+                .serviceId(serviceId)
+                .name("비활성 시설")
+                .locationName("테스트 장소")
+                .region("강남구")
+                .isFree(true)
+                .active(false)
+                .sourceUpdatedAt(LocalDateTime.now())
+                .build();
+        MatchCreateRequestDto request = MatchCreateRequestDto.builder()
+                .serviceId(serviceId)
+                .build();
+        when(facilityServiceSnapshotRepository.findById(serviceId))
+                .thenReturn(Optional.of(inactiveFacility));
+
+        assertThrows(ServiceNotFoundException.class,
+                () -> matchService.createMatch(request, userId));
+
+        verify(memberLookup).validateActive(userId);
+        verifyNoInteractions(matchRepository, matchParticipantRepository);
+    }
 
     @Test
     @DisplayName("[TC-EM03-01] 매칭 상세 정상 조회 - 기본 정보와 조회된 참가 인원을 반환한다")

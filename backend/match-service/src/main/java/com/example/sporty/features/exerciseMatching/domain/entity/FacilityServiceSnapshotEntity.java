@@ -49,4 +49,22 @@ public class FacilityServiceSnapshotEntity {
     @UpdateTimestamp
     @Column(name = "updated_at", nullable = false, columnDefinition = "TIMESTAMP")
     private LocalDateTime updatedAt;
+
+    public void updateSnapshot(
+            String name,
+            String locationName,
+            String region,
+            Boolean isFree,
+            LocalDateTime reservationDeadlineAt,
+            Boolean active,
+            LocalDateTime sourceUpdatedAt
+    ) {
+        this.name = name;
+        this.locationName = locationName;
+        this.region = region;
+        this.isFree = isFree;
+        this.reservationDeadlineAt = reservationDeadlineAt;
+        this.active = active;
+        this.sourceUpdatedAt = sourceUpdatedAt;
+    }
 }

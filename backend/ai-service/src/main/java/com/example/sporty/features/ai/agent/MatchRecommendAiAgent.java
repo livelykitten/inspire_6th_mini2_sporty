@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -16,15 +17,15 @@ import org.springframework.stereotype.Service;
 import com.example.sporty.features.ai.domain.dto.AiRecommendDto;
 import com.example.sporty.features.commons.exception.ai.AiRecommendException;
 import com.example.sporty.features.commons.util.SportType;
-import com.example.sporty.features.exerciseMatching.domain.dto.MatchResponseDto;
-import com.example.sporty.features.exerciseMatching.domain.dto.MatchSearchRequestDto;
-import com.example.sporty.features.exerciseMatching.domain.enums.GenderGroup;
-import com.example.sporty.features.exerciseMatching.domain.enums.MatchStatus;
-import com.example.sporty.features.exerciseMatching.repository.MatchParticipantRepository;
-import com.example.sporty.features.exerciseMatching.service.MatchService;
-import com.example.sporty.features.users.domain.dto.UserInfoResponseDto;
-import com.example.sporty.features.users.domain.entity.Gender;
-import com.example.sporty.features.users.service.UserService;
+import com.example.sporty.features.ai.client.dto.MatchResponseDto;
+import com.example.sporty.features.ai.client.dto.MatchSearchRequestDto;
+import com.example.sporty.features.ai.client.enums.GenderGroup;
+import com.example.sporty.features.ai.client.enums.MatchStatus;
+import com.example.sporty.features.ai.client.dto.MyMatchResponseDto;
+import com.example.sporty.features.ai.client.MatchClient;
+import com.example.sporty.features.ai.client.dto.UserInfoResponseDto;
+import com.example.sporty.features.ai.client.enums.Gender;
+import com.example.sporty.features.ai.client.UserClient;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -36,33 +37,35 @@ public class MatchRecommendAiAgent {
     private static final String FAIL_MESSAGE = "추천 매치를 만들지 못했습니다. 잠시 후 다시 시도해주세요.";
 
     private final ChatClient matchRecommendChatClient;
-    private final UserService userService;
-    private final MatchService matchService;
-    private final MatchParticipantRepository matchParticipantRepository;
+    private final UserClient userClient;
+    private final MatchClient matchClient;
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
 
     // ChatClient 빈이 여러 개라 이름으로 지정한다 (AiAgentConfig의 @Bean 메서드명)
     public MatchRecommendAiAgent(@Qualifier("matchRecommendChatClient") ChatClient matchRecommendChatClient,
-            UserService userService, MatchService matchService,
-            MatchParticipantRepository matchParticipantRepository) {
+                                 UserClient userClient, MatchClient matchClient) {
         this.matchRecommendChatClient = matchRecommendChatClient;
-        this.userService = userService;
-        this.matchService = matchService;
-        this.matchParticipantRepository = matchParticipantRepository;
+        this.userClient = userClient;
+        this.matchClient = matchClient;
     }
 
     public List<MatchResponseDto> recommend(Long userId) {
         // 1. 회원 정보: 성별, 활동 자치구, 선호 종목
-        UserInfoResponseDto me = userService.getMyInfo(userId);
+        UserInfoResponseDto me = userClient.getMyInfo(userId);
 
         // 2. 후보: 모집중 + 아직 시작 전 → 조건 거르기 → 내가 만들었거나 참가한 매치 제외 → 최대 20개
-        List<MatchResponseDto> recruiting = matchService.searchMatches(MatchSearchRequestDto.builder()
+        List<MatchResponseDto> recruiting = matchClient.searchMatches(MatchSearchRequestDto.builder()
                 .status(MatchStatus.RECRUITING)
                 .startAt(LocalDateTime.now())
                 .build());
 
+        // 내 매치를 한 번 조회하고 ID 집합으로 만들어 후보에서 제외한다.
+        Set<Long> myMatchIds = matchClient.getMyMatches(userId).stream()
+                .map(MyMatchResponseDto::getMatchId)
+                .collect(Collectors.toSet());
+
         List<MatchResponseDto> candidates = candidates(me, recruiting).stream()
-                .filter(match -> !matchParticipantRepository.existsByMatch_IdAndUserId(match.getMatchId(), userId))
+                .filter(match -> !myMatchIds.contains(match.getMatchId()))
                 .limit(CANDIDATE_MAX)
                 .toList();
 
@@ -85,11 +88,17 @@ public class MatchRecommendAiAgent {
                 4. 후보 목록에 있는 ID만 사용하고, 추천 순서대로 전달한다.
                 """.formatted(RECOMMEND_SIZE, RECOMMEND_SIZE);
 
-        String result = matchRecommendChatClient.prompt()
-                .system(systemPrompt)
-                .user(toPromptText(me, candidates))
-                .call()
-                .content();
+        String result;
+        try {
+            result = matchRecommendChatClient.prompt()
+                    .system(systemPrompt)
+                    .user(toPromptText(me, candidates))
+                    .call()
+                    .content();
+        } catch (RuntimeException e) {
+            // Feign calls above remain outside this block and keep their own error contract.
+            throw new AiRecommendException(FAIL_MESSAGE, e);
+        }
 
         System.out.println("debug >>>> match recommend ai agent result : " + result);
 

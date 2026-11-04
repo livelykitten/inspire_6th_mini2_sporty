@@ -1,0 +1,12 @@
+# match-service 설정 (W-24). DB 비밀번호 · JWT 키는 '{cipher}...' (W-25, README.md)
+spring:
+  datasource:
+    driver-class-name: ${DB_DRIVER:org.mariadb.jdbc.Driver}
+    url: ${DB_URL:jdbc:mariadb://localhost:3307/match_db}
+    username: ${DB_USERNAME:match_svc}
+    password: '{cipher}61c3f913b9ee57af39189a007593e0f8e1f0d2da44fcab7eb4519668c03296f9'
+  jpa:
+    hibernate:
+      ddl-auto: update
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}

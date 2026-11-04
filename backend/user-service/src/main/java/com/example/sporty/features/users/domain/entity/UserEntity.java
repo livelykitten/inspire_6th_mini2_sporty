@@ -34,6 +34,9 @@ public class UserEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private UserStatus status = UserStatus.ACTIVE;
+    
+    @Column(name = "withdrawal_saga_id", length = 36)
+    private String withdrawalSagaId;
 
     @Column(name ="withdrawn_at")
     private Date withdrawnAt;

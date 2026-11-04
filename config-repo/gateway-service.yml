@@ -1,0 +1,41 @@
+# gateway-service 설정 (W-24 로 서비스 application.yml 에서 옮김). 값은 그대로
+spring:
+  cloud:
+    gateway:
+      server:
+        webflux:
+          # 1차 SecurityConfig 37-41행 값 그대로 (오리진만 배포용으로 바꿀 수 있게 환경변수). 서비스 쪽 CORS 는 각 담당이 제거
+          globalcors:
+            cors-configurations:
+              '[/**]':
+                allowed-origins: ${CORS_ALLOWED_ORIGIN:http://localhost:3000}
+                allowed-methods: GET, POST, PUT, PATCH, DELETE, OPTIONS
+                allowed-headers: Authorization, Content-Type, Refresh-Token
+                exposed-headers: Authorization
+                allow-credentials: true
+          default-filters:
+            # 서비스에 CORS 가 남아 있어도 헤더가 두 번 붙지 않게 (두 번 붙으면 브라우저가 막음)
+            - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials, RETAIN_FIRST
+          # 경로는 바꾸지 않고 그대로 전달 (RewritePath · StripPrefix 없음)
+          # /internal/** 은 라우트가 없으므로 밖에서 부르면 404 (서비스끼리 Feign 으로만 사용)
+          routes:
+            - id: user-service
+              uri: lb://user-service
+              predicates:
+                - Path=/api/users/**, /api/auth/**, /api/profiles/**
+            - id: match-service
+              uri: lb://match-service
+              predicates:
+                - Path=/api/matches/**
+            - id: facility-service
+              uri: lb://facility-service
+              predicates:
+                - Path=/api/services/**
+            - id: ai-service
+              uri: lb://ai-service
+              predicates:
+                - Path=/api/ai/**
+
+# user-service 와 같은 값 (같은 암호문, 풀면 32바이트 이상). W-25
+jwt:
+  secret: '{cipher}6bf811c263724af8c1af56ff3ab9b43cf843ccb3f0e3aa6d3663daab9f83644b729170f1662e44ac7528524580687aa0deb4fa2ee70da30338b706fa9636e733830c0a190c237951021c916f945c603b'

@@ -12,8 +12,8 @@ import com.example.sporty.features.ai.domain.dto.AiSearchResponseDto;
 import com.example.sporty.features.ai.util.PromptDateTable;
 import com.example.sporty.features.ai.util.SupportedSports;
 import com.example.sporty.features.commons.exception.ai.AiSearchException;
-import com.example.sporty.features.exerciseMatching.domain.dto.MatchResponseDto;
-import com.example.sporty.features.exerciseMatching.service.MatchService;
+import com.example.sporty.features.ai.client.dto.MatchResponseDto;
+import com.example.sporty.features.ai.client.MatchClient;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -25,18 +25,18 @@ public class MatchAiAgent {
             "검색 조건을 찾지 못했습니다. 종목, 지역, 날짜 중 하나 이상을 포함해 주세요. (예: 이번 주말 강남에서 풋살)";
 
     private final ChatClient matchChatClient;
-    private final MatchService matchService;
+    private final MatchClient matchClient;
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
 
     // ChatClient 빈이 2개라 이름으로 지정한다 (AiAgentConfig의 @Bean 메서드명)
-    public MatchAiAgent(@Qualifier("matchChatClient") ChatClient matchChatClient, MatchService matchService) {
+    public MatchAiAgent(@Qualifier("matchChatClient") ChatClient matchChatClient, MatchClient matchClient) {
         this.matchChatClient = matchChatClient;
-        this.matchService = matchService;
+        this.matchClient = matchClient;
     }
 
     public AiSearchResponseDto search(String prompt) {
         AiSearchConditionDto condition = extractCondition(prompt);
-        List<MatchResponseDto> matches = matchService.searchMatches(condition.toSearchRequest());
+        List<MatchResponseDto> matches = matchClient.searchMatches(condition.toSearchRequest());
 
         System.out.println("debug >>>> match ai agent search matches : " + matches.size());
 
