@@ -28,9 +28,6 @@ f2_user_down_match_detail_ok() {
   new_user f2 || return
   create_match "f2-${RANDOM}" || { fail "사전 매치 생성 실패"; return; }
   local mid="$MATCH_ID"
-  # 앞 테스트(E · F)가 match 를 재기동했을 수 있다. 게이트웨이 라우트가 안정된 뒤에 user 를 멈춰야
-  # user 장애가 아닌 게이트웨이 캐시 갱신 때문에 503 이 나는 것을 섞지 않는다.
-  wait_gateway_stable 40 150 || { fail "사전 조건: 게이트웨이 → match 라우트가 안정되지 않음"; return; }
   compose stop user-service >/dev/null 2>&1
   sleep 2
   req GET "/api/matches/$mid"

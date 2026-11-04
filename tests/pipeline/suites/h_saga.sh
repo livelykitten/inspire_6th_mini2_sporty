@@ -16,14 +16,8 @@ h1_withdraw_success() {
     sleep 2
   done
   case "$HTTP_CODE" in 400|401|403|404|409) ;; *) fail "탈퇴 뒤 로그인이 막히지 않음 (HTTP $HTTP_CODE)" ;; esac
-  # 로그인은 WITHDRAWAL_PENDING 에서도 막히지만, 내 정보 조회(USR-06)는 PENDING 동안 허용이 확정된 규약이다 (설계 문서 PR #23).
-  # 그래서 토큰 차단은 Saga 가 WITHDRAWN 으로 확정한 뒤부터이므로, 막힐 때까지 기다린 다음 확인한다.
-  for i in $(seq 1 20); do
-    req GET /api/users/me -t "$tok"
-    [ "$HTTP_CODE" != "200" ] && break
-    sleep 1
-  done
-  case "$HTTP_CODE" in 401|403|404) ;; *) fail "탈퇴 확정 뒤에도 기존 토큰으로 내 정보 조회가 막히지 않음 (HTTP $HTTP_CODE)" ;; esac
+  req GET /api/users/me -t "$tok"
+  case "$HTTP_CODE" in 401|403|404) ;; *) fail "탈퇴 뒤 기존 토큰으로 내 정보 조회가 막히지 않음 (HTTP $HTTP_CODE)" ;; esac
 }
 
 h2_duplicate_withdraw_code() {
@@ -38,29 +32,14 @@ h2_duplicate_withdraw_code() {
   esac
 }
 
-# match 를 실패 주입 설정(SAGA_FAIL_CLEANUP)으로 다시 띄운다. compose.app.yaml 이 이 값을 match 의 saga.fail-cleanup 으로 넘긴다.
-h_restart_match() { # true|false
-  SAGA_FAIL_CLEANUP="$1" $COMPOSE_CMD up -d match-service >/dev/null 2>&1
-  wait_service_healthy match-service 150 && wait_gateway_stable 40 150
-}
-
 h3_compensation_on_failure() {
-  # 보상 시나리오 (W-32): match 쪽 정리를 일부러 실패시키면 재시도 소진 → EV-04 → user 가 PENDING 에서 ACTIVE 로 복원한다.
-  need_docker || return
-  h_restart_match true || { fail "실패 주입 설정으로 match-service 재기동 실패"; h_restart_match false; return; }
-  if new_user h3; then
-    req DELETE /api/users/me -t "$U_TOKEN" -d "{\"password\":\"$U_PW\"}"
-    expect_code "202|204" "탈퇴 요청"
-    # 로그인은 PENDING · WITHDRAWN 에서 막히고 ACTIVE 에서만 된다. 다시 200 이 되면 보상으로 복원된 것이다.
-    local i
-    for i in $(seq 1 30); do
-      sleep 2
-      req POST /api/auth/login -d "{\"email\":\"$U_EMAIL\",\"password\":\"$U_PW\"}"
-      [ "$HTTP_CODE" = "200" ] && break
-    done
-    expect_code 200 "보상 뒤 로그인 (ACTIVE 복원)"
-  fi
-  h_restart_match false || fail "실패 주입 해제 뒤 match-service 복구 실패"
+  # 보상 시나리오는 Config 의 saga.fail-cleanup=true 로 match 쪽 정리를 일부러 실패시킨다 (W-32).
+  local cfg
+  cfg="$(curl -s -m 5 http://127.0.0.1:8888/match-service/default 2>/dev/null || true)"
+  case "$cfg" in
+    *saga.fail-cleanup*) fail "구현 필요: 보상 시나리오 자동화 (saga.fail-cleanup 이 생기면 설정 변경 · 재기동 · 탈퇴 · ACTIVE 복원 확인)" ;;
+    *) fail "대기: W-32 (saga.fail-cleanup 설정과 보상 이벤트 EV-04 미구현)" ;;
+  esac
 }
 
 tc 2 "TC-04 USR-04"  "탈퇴 요청 → 로그인 · 토큰 차단"                         h1_withdraw_success
