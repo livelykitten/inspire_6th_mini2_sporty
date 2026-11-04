@@ -57,3 +57,35 @@ tc 4 "TC-02 USR-02 · TC-06 USR-06" "로그인 + 내 정보 조회"             
 tc 4 "TC-05 USR-05"          "토큰 재발급"                             b3_refresh
 tc 4 "TC-03 USR-03"          "로그아웃 후 리프레시 토큰 거부"          b4_logout_revokes_refresh
 tc 4 "TC-07 PR-01 · TC-08 PR-02" "프로필 수정 + 반영 확인"             b5_profile_update_get
+
+# W-38 추가 계약 검증: 기존 배점/테스트는 유지하고 아래 항목은 모두 0점이다.
+b6_duplicate_email_exact() {
+  new_user b6 || return
+  # 닉네임 충돌과 구분하기 위해 이메일만 재사용하고 닉네임은 새로 만든다.
+  local nick="b6dup${RANDOM}${RANDOM}"
+  req POST /api/users -d "{\"email\":\"$U_EMAIL\",\"password\":\"$U_PW\",\"gender\":\"MALE\",\"nickname\":\"$nick\",\"district\":\"GANGNAM\",\"sportTypes\":[\"FUTSAL\"]}"
+  expect_code 409 "동일 이메일 재가입"
+  expect_eq DUPLICATE_EMAIL "$(jget .code)" "동일 이메일 오류 code"
+}
+
+b7_wrong_password_exact() {
+  new_user b7 || return
+  req POST /api/auth/login -d "{\"email\":\"$U_EMAIL\",\"password\":\"wrong-password-1\"}"
+  expect_code 401 "틀린 비밀번호 로그인"
+  expect_eq LOGIN_FAILED "$(jget .code)" "로그인 오류 code"
+}
+
+b8_logged_out_refresh_exact() {
+  new_user b8 || return
+  local old_rt="$U_REFRESH"
+  [ -n "$old_rt" ] || { fail "사전 로그인 응답에 refreshToken 없음"; return; }
+  req POST /api/auth/logout -t "$U_TOKEN"
+  expect_code 204 "사전 로그아웃" || return
+  req POST /api/auth/refresh -d "{\"refreshToken\":\"$old_rt\"}"
+  expect_code 401 "로그아웃한 RT 재발급"
+  expect_eq INVALID_REFRESH_TOKEN "$(jget .code)" "재발급 오류 code"
+}
+
+tc 0 "W-38 TC-01 USR-01" "동일 이메일: 409 + DUPLICATE_EMAIL" b6_duplicate_email_exact
+tc 0 "W-38 TC-02 USR-02" "틀린 비밀번호: 401 + LOGIN_FAILED" b7_wrong_password_exact
+tc 0 "W-38 TC-05 USR-05" "로그아웃 RT: 401 + INVALID_REFRESH_TOKEN" b8_logged_out_refresh_exact
