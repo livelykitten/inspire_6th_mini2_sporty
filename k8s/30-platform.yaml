@@ -1,0 +1,67 @@
+# 플랫폼 서버: Eureka(discovery) · Config. 이미지 = compose 로 빌드한 sporty/*:local (imagePullPolicy: Never)
+# 기동 순서는 compose 의 depends_on 대신 initContainer(앞 서버가 응답할 때까지 대기)로 맞춘다.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: discovery-service, namespace: sporty, labels: { app: discovery-service, tier: platform } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: discovery-service } }
+  template:
+    metadata: { labels: { app: discovery-service, tier: platform } }
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: app
+          image: sporty/discovery-service:local
+          imagePullPolicy: Never
+          # discovery 는 Config 를 쓰지 않아 공통 ConfigMap 을 통째로 받지 않고 Zipkin 주소만 받는다 (팀 PR #62 와 같은 값)
+          env:
+            - { name: TZ, value: Asia/Seoul }
+            - { name: ZIPKIN_ENDPOINT, valueFrom: { configMapKeyRef: { name: sporty-app-env, key: ZIPKIN_ENDPOINT } } }
+          ports: [{ containerPort: 8761 }]
+          # discovery 는 actuator 가 없어 Eureka 화면(/)으로 확인한다 (compose 와 같음)
+          startupProbe: { httpGet: { path: /, port: 8761 }, periodSeconds: 10, failureThreshold: 30 }
+          readinessProbe: { httpGet: { path: /, port: 8761 }, periodSeconds: 10 }
+          resources: { requests: { memory: 256Mi }, limits: { memory: 512Mi } }
+---
+# Eureka 대시보드를 브라우저로 보려고 LoadBalancer(Docker Desktop 은 localhost:8761 로 연결)
+apiVersion: v1
+kind: Service
+metadata: { name: discovery-service, namespace: sporty }
+spec:
+  type: LoadBalancer
+  selector: { app: discovery-service }
+  ports: [{ port: 8761, targetPort: 8761 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: config-service, namespace: sporty, labels: { app: config-service, tier: platform } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: config-service } }
+  template:
+    metadata: { labels: { app: config-service, tier: platform } }
+    spec:
+      enableServiceLinks: false
+      initContainers:
+        - name: wait-discovery
+          image: busybox:1.36
+          command: ["sh", "-c", "until wget -q -O /dev/null http://discovery-service:8761/; do echo 'discovery 대기'; sleep 3; done"]
+      containers:
+        - name: app
+          image: sporty/config-service:local
+          imagePullPolicy: Never
+          envFrom: [{ configMapRef: { name: sporty-app-env } }]
+          env:
+            # {cipher} 값(DB 비밀번호 · JWT 키)을 풀 키. 없으면 gateway 가 jwt.secret 을 못 받아 뜨지 않는다
+            - { name: ENCRYPT_KEY, valueFrom: { secretKeyRef: { name: sporty-secrets, key: ENCRYPT_KEY } } }
+          ports: [{ containerPort: 8888 }]
+          startupProbe: { httpGet: { path: /actuator/health, port: 8888 }, periodSeconds: 10, failureThreshold: 30 }
+          readinessProbe: { httpGet: { path: /actuator/health, port: 8888 }, periodSeconds: 10 }
+          resources: { requests: { memory: 256Mi }, limits: { memory: 512Mi } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: config-service, namespace: sporty }
+spec: { selector: { app: config-service }, ports: [{ port: 8888, targetPort: 8888 }] }
