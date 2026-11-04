@@ -27,7 +27,7 @@ jobs:
           - { service: facility-service, wip: false }
           - { service: user-service, wip: false } # W-07 머지됨 (PR #12 · #13)
           - { service: match-service, wip: false } # W-08
-          - { service: ai-service, wip: true } # W-10
+          - { service: ai-service, wip: false } # W-10 머지됨 (PR #24)
     defaults:
       run:
         working-directory: backend
@@ -65,7 +65,7 @@ jobs:
       - name: master 가 서비스별 Dockerfile 과 같은지 확인
         run: bash scripts/gen-master-dockerfile.sh --check
 
-  # 서비스별 이미지가 실제로 빌드되는지 확인한다 (push 하지 않는다). ai-service 는 PR #24 머지 전까지 wip.
+  # 서비스별 이미지가 실제로 빌드되는지 확인한다 (push 하지 않는다). wip 는 새 서비스가 아직 컴파일되지 않을 때만 쓴다.
   docker:
     name: docker (${{ matrix.service }})
     runs-on: ubuntu-latest
@@ -79,7 +79,7 @@ jobs:
           - { service: facility-service, wip: false }
           - { service: user-service, wip: false }
           - { service: match-service, wip: false }
-          - { service: ai-service, wip: true } # W-10 (PR #24)
+          - { service: ai-service, wip: false } # W-10 머지됨 (PR #24)
     steps:
       - name: 코드 내려받기
         uses: actions/checkout@v4
