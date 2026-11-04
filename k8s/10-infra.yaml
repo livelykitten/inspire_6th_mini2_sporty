@@ -1,0 +1,222 @@
+# 인프라: DB 3대 · Redis · Kafka · Zipkin + 토픽 생성 Job.
+# compose.yaml 과 같은 이미지 · 같은 서비스 이름을 써서 앱 쪽 접속 주소(user-db:3306, kafka:29092 …)가 compose.app.yaml 과 같다.
+# 데이터는 emptyDir(파드를 지우면 사라짐). 시연 · 검증용 로컬 클러스터라 영구 볼륨을 두지 않는다.
+# enableServiceLinks: false = 쿠버네티스가 넣는 KAFKA_PORT 같은 환경변수가 Kafka 설정으로 잘못 읽히는 것을 막는다.
+
+# ---------- MariaDB 3대 (서비스별 DB) ----------
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: user-db, namespace: sporty, labels: { app: user-db, tier: infra } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: user-db } }
+  template:
+    metadata: { labels: { app: user-db, tier: infra } }
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: mariadb
+          image: mariadb:11
+          args: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+          env:
+            - { name: MARIADB_ROOT_PASSWORD, value: root }
+            - { name: MARIADB_DATABASE, value: user_db }
+            - { name: MARIADB_USER, value: user_svc }
+            - { name: MARIADB_PASSWORD, value: user_svc }
+            - { name: TZ, value: Asia/Seoul }
+          ports: [{ containerPort: 3306 }]
+          readinessProbe:
+            exec: { command: ["healthcheck.sh", "--connect", "--innodb_initialized"] }
+            periodSeconds: 5
+          resources: { requests: { memory: 128Mi }, limits: { memory: 384Mi } }
+          volumeMounts: [{ name: data, mountPath: /var/lib/mysql }]
+      volumes: [{ name: data, emptyDir: {} }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: user-db, namespace: sporty }
+spec: { selector: { app: user-db }, ports: [{ port: 3306, targetPort: 3306 }] }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: match-db, namespace: sporty, labels: { app: match-db, tier: infra } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: match-db } }
+  template:
+    metadata: { labels: { app: match-db, tier: infra } }
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: mariadb
+          image: mariadb:11
+          args: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+          env:
+            - { name: MARIADB_ROOT_PASSWORD, value: root }
+            - { name: MARIADB_DATABASE, value: match_db }
+            - { name: MARIADB_USER, value: match_svc }
+            - { name: MARIADB_PASSWORD, value: match_svc }
+            - { name: TZ, value: Asia/Seoul }
+          ports: [{ containerPort: 3306 }]
+          readinessProbe:
+            exec: { command: ["healthcheck.sh", "--connect", "--innodb_initialized"] }
+            periodSeconds: 5
+          resources: { requests: { memory: 128Mi }, limits: { memory: 384Mi } }
+          volumeMounts: [{ name: data, mountPath: /var/lib/mysql }]
+      volumes: [{ name: data, emptyDir: {} }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: match-db, namespace: sporty }
+spec: { selector: { app: match-db }, ports: [{ port: 3306, targetPort: 3306 }] }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: facility-db, namespace: sporty, labels: { app: facility-db, tier: infra } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: facility-db } }
+  template:
+    metadata: { labels: { app: facility-db, tier: infra } }
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: mariadb
+          image: mariadb:11
+          args: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+          env:
+            - { name: MARIADB_ROOT_PASSWORD, value: root }
+            - { name: MARIADB_DATABASE, value: facility_db }
+            - { name: MARIADB_USER, value: facility_svc }
+            - { name: MARIADB_PASSWORD, value: facility_svc }
+            - { name: TZ, value: Asia/Seoul }
+          ports: [{ containerPort: 3306 }]
+          readinessProbe:
+            exec: { command: ["healthcheck.sh", "--connect", "--innodb_initialized"] }
+            periodSeconds: 5
+          resources: { requests: { memory: 128Mi }, limits: { memory: 384Mi } }
+          volumeMounts: [{ name: data, mountPath: /var/lib/mysql }]
+      volumes: [{ name: data, emptyDir: {} }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: facility-db, namespace: sporty }
+spec: { selector: { app: facility-db }, ports: [{ port: 3306, targetPort: 3306 }] }
+---
+# ---------- Redis (Refresh Token) ----------
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: redis, namespace: sporty, labels: { app: redis, tier: infra } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: redis } }
+  template:
+    metadata: { labels: { app: redis, tier: infra } }
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          ports: [{ containerPort: 6379 }]
+          readinessProbe:
+            exec: { command: ["redis-cli", "ping"] }
+            periodSeconds: 5
+          resources: { requests: { memory: 32Mi }, limits: { memory: 128Mi } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: redis, namespace: sporty }
+spec: { selector: { app: redis }, ports: [{ port: 6379, targetPort: 6379 }] }
+---
+# ---------- Kafka (KRaft 단일 노드) ----------
+# compose 와 달리 EXTERNAL(localhost:9092) 리스너는 두지 않는다. 클러스터 안에서는 kafka:29092 만 쓴다.
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: kafka, namespace: sporty, labels: { app: kafka, tier: infra } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: kafka } }
+  template:
+    metadata: { labels: { app: kafka, tier: infra } }
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: kafka
+          image: apache/kafka:3.9.1
+          env:
+            - { name: KAFKA_NODE_ID, value: "1" }
+            - { name: KAFKA_PROCESS_ROLES, value: "broker,controller" }
+            - { name: KAFKA_CONTROLLER_QUORUM_VOTERS, value: "1@localhost:9093" }
+            - { name: KAFKA_CONTROLLER_LISTENER_NAMES, value: CONTROLLER }
+            - { name: KAFKA_LISTENERS, value: "INTERNAL://:29092,CONTROLLER://:9093" }
+            - { name: KAFKA_ADVERTISED_LISTENERS, value: "INTERNAL://kafka:29092" }
+            - { name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP, value: "INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT" }
+            - { name: KAFKA_INTER_BROKER_LISTENER_NAME, value: INTERNAL }
+            - { name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR, value: "1" }
+            - { name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR, value: "1" }
+            - { name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR, value: "1" }
+            - { name: KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS, value: "0" }
+            - { name: KAFKA_AUTO_CREATE_TOPICS_ENABLE, value: "true" }
+            - { name: KAFKA_NUM_PARTITIONS, value: "1" }
+          ports: [{ containerPort: 29092 }]
+          # kafka-topics.sh 는 실행마다 JVM 을 새로 띄워 10초 안에 못 끝난다(LG 노트북 실측: 31회 연속 시간 초과).
+          # 포트가 열렸는지만 본다. 토픽 생성 확인은 kafka-init Job 이 한다.
+          readinessProbe:
+            tcpSocket: { port: 29092 }
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources: { requests: { memory: 384Mi }, limits: { memory: 1Gi } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: kafka, namespace: sporty }
+spec: { selector: { app: kafka }, ports: [{ name: internal, port: 29092, targetPort: 29092 }] }
+---
+# compose 의 kafka-init 과 같은 토픽 4개 + DLT 4개를 만든다 (한 번 돌고 끝나는 Job).
+apiVersion: batch/v1
+kind: Job
+metadata: { name: kafka-init, namespace: sporty }
+spec:
+  backoffLimit: 6
+  template:
+    spec:
+      enableServiceLinks: false
+      restartPolicy: OnFailure
+      containers:
+        - name: kafka-init
+          image: apache/kafka:3.9.1
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              until /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --list >/dev/null 2>&1; do echo "kafka 대기"; sleep 5; done
+              for t in facility.service.changed user.withdrawal.requested match.withdrawal.completed match.withdrawal.failed; do
+                /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --create --if-not-exists --topic "$t" --partitions 1 --replication-factor 1
+                /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --create --if-not-exists --topic "$t.DLT" --partitions 1 --replication-factor 1
+              done
+              /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --list
+---
+# ---------- Zipkin (분산 추적) ----------
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: zipkin, namespace: sporty, labels: { app: zipkin, tier: infra } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: zipkin } }
+  template:
+    metadata: { labels: { app: zipkin, tier: infra } }
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: zipkin
+          image: openzipkin/zipkin:3
+          env: [{ name: STORAGE_TYPE, value: mem }]
+          ports: [{ containerPort: 9411 }]
+          resources: { requests: { memory: 128Mi }, limits: { memory: 384Mi } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: zipkin, namespace: sporty }
+spec:
+  type: LoadBalancer
+  selector: { app: zipkin }
+  ports: [{ port: 9411, targetPort: 9411 }]

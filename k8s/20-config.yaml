@@ -1,0 +1,47 @@
+# 설정. 비밀값(JWT_SECRET_KEY · ENCRYPT_KEY · OPEN_AI_KEY · 공공데이터 키)은 여기 두지 않고
+# up.sh 가 루트 .env 에서 읽어 Secret(sporty-secrets)으로 만든다.
+
+# 앱 7개 공통 환경변수 (compose.app.yaml 의 x-app-env 와 같은 값 + Zipkin 주소)
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: sporty-app-env, namespace: sporty }
+data:
+  EUREKA_URL: http://discovery-service:8761/eureka
+  EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
+  SPRING_CLOUD_CONFIG_URI: http://config-service:8888
+  ZIPKIN_ENDPOINT: http://zipkin:9411/api/v2/spans
+  KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+  TZ: Asia/Seoul
+---
+# 프론트 nginx 설정. 이미지 안의 nginx.conf 는 Docker DNS(127.0.0.11)를 쓰므로 클러스터에서는 이 파일로 덮어쓴다.
+# gateway-service 는 쿠버네티스 Service 라 주소(ClusterIP)가 고정이어서 resolver 없이 바로 프록시한다.
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: frontend-nginx, namespace: sporty }
+data:
+  default.conf: |
+    server {
+        listen 80;
+        server_name _;
+        root /usr/share/nginx/html;
+        index index.html;
+
+        location /api/ {
+            proxy_pass http://gateway-service:8000;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        location = /healthz {
+            access_log off;
+            default_type text/plain;
+            return 200 "ok";
+        }
+
+        location / {
+            try_files $uri $uri/ /index.html;
+        }
+    }
