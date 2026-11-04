@@ -46,6 +46,9 @@ import com.example.sporty.features.exerciseMatching.service.MatchService;
 @WebMvcTest(MatchController.class)
 @Import({MatchService.class, SecurityConfig.class})
 class MatchJoinControllerTest {
+    @MockitoBean com.example.sporty.features.exerciseMatching.withdrawal.MatchUserGuardService userGuards;
+    @MockitoBean org.springframework.transaction.PlatformTransactionManager transactionManager;
+
 
     @Autowired
     private MockMvc mvc;
@@ -229,6 +232,7 @@ class MatchJoinControllerTest {
     private MatchEntity givenMatch(MatchStatus status, LocalDateTime startAt) {
         MatchEntity match = MatchEntity.builder().id(201L).maxParticipant(5)
                 .startAt(startAt).status(status).build();
+        when(matchRepository.existsById(201L)).thenReturn(true);
         when(matchRepository.findByIdForUpdate(201L)).thenReturn(Optional.of(match));
         return match;
     }

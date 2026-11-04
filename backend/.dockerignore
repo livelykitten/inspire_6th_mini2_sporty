@@ -7,7 +7,7 @@
 **/.env.*
 !**/.env.example
 **/*.log
-Dockerfile
+**/Dockerfile
 .dockerignore
 
 # 1차 모놀리스는 서비스 이미지에 필요 없다.
