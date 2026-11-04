@@ -20,10 +20,16 @@ spring:
       ddl-auto: update
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
   cloud:
     stream:
       kafka:
         binder:
+          producer-properties:
+            key.serializer: org.apache.kafka.common.serialization.ByteArraySerializer
+            value.serializer: org.apache.kafka.common.serialization.ByteArraySerializer
           brokers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     openfeign:
       circuitbreaker:
