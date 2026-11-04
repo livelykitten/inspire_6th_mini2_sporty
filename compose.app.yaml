@@ -180,6 +180,27 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8000/actuator/health"]
       <<: *health-actuator
+  
+  notification-service:
+    <<: *app
+    build: { context: ./backend, dockerfile: Dockerfile, target: notification-service }
+    image: sporty/notification-service:local
+    mem_limit: 512m
+    environment:
+      <<: *app-env
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SMTP_USERNAME: ${SMTP_USERNAME}
+      SMTP_APP_PASSWORD: ${SMTP_APP_PASSWORD}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+    ports:
+      - 8010:8010
+    depends_on:
+      discovery-service: { condition: service_healthy }
+      config-service: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8010/actuator/health"]
+      <<: *health-actuator
 
   # 담당: 반정욱 (@salieri009) · Dockerfile: frontend/Dockerfile (master 대상 아님)
   frontend:

@@ -14,7 +14,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-SERVICES=(discovery-service config-service gateway-service user-service match-service facility-service ai-service)
+SERVICES=(discovery-service config-service gateway-service user-service match-service facility-service ai-service notification-service)
 OUT=backend/Dockerfile
 
 generate() {
