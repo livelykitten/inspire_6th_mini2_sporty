@@ -15,6 +15,8 @@ x-app-env: &app-env
   EUREKA_URL: http://discovery-service:8761/eureka
   EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
   SPRING_CLOUD_CONFIG_URI: http://config-service:8888
+  # W-33: 컨테이너 안의 localhost 는 자기 자신이라 Zipkin 전송 주소를 compose 서비스 이름으로 준다 (기본값 localhost:9411 은 IDE 실행용).
+  ZIPKIN_ENDPOINT: http://zipkin:9411/api/v2/spans
   TZ: Asia/Seoul
 
 # 서비스 컨테이너 공통: 시작 느린 JVM 을 위해 start_period 를 넉넉히 둔다.
@@ -36,6 +38,7 @@ services:
     mem_limit: 512m
     environment:
       TZ: Asia/Seoul
+      ZIPKIN_ENDPOINT: http://zipkin:9411/api/v2/spans
     ports:
       - "8761:8761"
     healthcheck:
