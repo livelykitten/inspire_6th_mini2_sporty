@@ -9,6 +9,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Service
 @RequiredArgsConstructor
@@ -19,11 +21,23 @@ public class WithdrawalTransactionService {
     private final MatchOutboxRepository outbox;
     private final ObjectMapper mapper;
     private final WithdrawalCleanupHook hook;
+    private final WithdrawalOutcomeService outcomes;
 
-    @Transactional
-    public boolean complete(WithdrawalRequestedEvent event) {
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public boolean complete(WithdrawalRequestedEvent event, WithdrawalAttempt attempt) {
+        TransactionSynchronizationManager.registerSynchronization(attempt);
+        try {
+            return completeInsideTransaction(event);
+        } catch (RuntimeException e) {
+            attempt.bodyFailed();
+            throw e;
+        }
+    }
+
+    private boolean completeInsideTransaction(WithdrawalRequestedEvent event) {
         var guard = guards.lock(event.userId());
         if (processed.lock(event.eventId()).isPresent() || guard.isBlocked()) return false;
+        if (outcomes.find(event) != WithdrawalOutcomeService.Outcome.NONE) return false;
         var result = matches.removeMatchesForWithdrawal(event.userId());
         hook.afterCleanup(event);
         guard.block();
