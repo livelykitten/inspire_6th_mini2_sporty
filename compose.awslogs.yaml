@@ -1,0 +1,69 @@
+# W-35 컨테이너 로그를 CloudWatch Logs 로 보낸다 (awslogs 드라이버). AWS 자격증명이 있는 EC2 에서만 쓴다.
+#
+#   docker compose -f compose.yaml -f compose.app.yaml -f compose.aws.yaml -f compose.awslogs.yaml up -d
+#
+# 로그 그룹은 stack1(CloudFormation)이 서비스마다 만들어 둔다: /{PROJECT_NAME}/{ENV_NAME}/{서비스}. 그룹을 새로 만들지 않는다.
+# 로컬에서는 쓰지 않는다 (자격증명이 없으면 컨테이너가 기동되지 않는다). `docker logs` 는 그대로 동작한다.
+#
+# 담당: 반정욱 (@salieri009) · 작업 위치: compose.awslogs.yaml
+
+x-awslogs: &awslogs
+  driver: awslogs
+
+services:
+  discovery-service:
+    logging:
+      <<: *awslogs
+      options:
+        awslogs-region: ${AWS_REGION:?AWS_REGION 을 설정하세요}
+        awslogs-group: /${PROJECT_NAME:-sporty}/${ENV_NAME:-prod}/discovery-service
+        awslogs-create-group: "false"
+  config-service:
+    logging:
+      <<: *awslogs
+      options:
+        awslogs-region: ${AWS_REGION:?AWS_REGION 을 설정하세요}
+        awslogs-group: /${PROJECT_NAME:-sporty}/${ENV_NAME:-prod}/config-service
+        awslogs-create-group: "false"
+  gateway-service:
+    logging:
+      <<: *awslogs
+      options:
+        awslogs-region: ${AWS_REGION:?AWS_REGION 을 설정하세요}
+        awslogs-group: /${PROJECT_NAME:-sporty}/${ENV_NAME:-prod}/gateway-service
+        awslogs-create-group: "false"
+  user-service:
+    logging:
+      <<: *awslogs
+      options:
+        awslogs-region: ${AWS_REGION:?AWS_REGION 을 설정하세요}
+        awslogs-group: /${PROJECT_NAME:-sporty}/${ENV_NAME:-prod}/user-service
+        awslogs-create-group: "false"
+  match-service:
+    logging:
+      <<: *awslogs
+      options:
+        awslogs-region: ${AWS_REGION:?AWS_REGION 을 설정하세요}
+        awslogs-group: /${PROJECT_NAME:-sporty}/${ENV_NAME:-prod}/match-service
+        awslogs-create-group: "false"
+  facility-service:
+    logging:
+      <<: *awslogs
+      options:
+        awslogs-region: ${AWS_REGION:?AWS_REGION 을 설정하세요}
+        awslogs-group: /${PROJECT_NAME:-sporty}/${ENV_NAME:-prod}/facility-service
+        awslogs-create-group: "false"
+  ai-service:
+    logging:
+      <<: *awslogs
+      options:
+        awslogs-region: ${AWS_REGION:?AWS_REGION 을 설정하세요}
+        awslogs-group: /${PROJECT_NAME:-sporty}/${ENV_NAME:-prod}/ai-service
+        awslogs-create-group: "false"
+  frontend:
+    logging:
+      <<: *awslogs
+      options:
+        awslogs-region: ${AWS_REGION:?AWS_REGION 을 설정하세요}
+        awslogs-group: /${PROJECT_NAME:-sporty}/${ENV_NAME:-prod}/frontend
+        awslogs-create-group: "false"

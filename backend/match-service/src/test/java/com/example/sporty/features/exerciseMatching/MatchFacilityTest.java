@@ -32,7 +32,7 @@ import com.example.sporty.support.FacilityFixtures;
         "test.context-id=match-facility"
 })
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.ANY)
-@Import(MatchService.class)
+@Import({MatchService.class, com.example.sporty.features.exerciseMatching.withdrawal.MatchUserGuardService.class})
 class MatchFacilityTest {
     @Autowired private EntityManager em;
     @Autowired private MatchService matchService;

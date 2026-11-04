@@ -47,6 +47,9 @@ import com.example.sporty.support.FacilityFixtures;
 
 @ExtendWith(MockitoExtension.class)
 class MatchServiceTest {
+    @Mock com.example.sporty.features.exerciseMatching.withdrawal.MatchUserGuardService userGuards;
+    @Mock org.springframework.transaction.PlatformTransactionManager transactionManager;
+
 
     @Mock
     private MatchRepository matchRepository;

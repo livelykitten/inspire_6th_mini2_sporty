@@ -26,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
     "test.context-id=my-matches"
 })
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.ANY)
-@Import(MatchService.class)
+@Import({MatchService.class, com.example.sporty.features.exerciseMatching.withdrawal.MatchUserGuardService.class})
 class MyMatchesTest {
     @Autowired EntityManager em;
     @Autowired MatchService service;

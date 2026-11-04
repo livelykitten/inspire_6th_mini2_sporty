@@ -42,13 +42,14 @@ import com.example.sporty.features.exerciseMatching.service.MatchService;
 @Tag("integration")
 @DataJpaTest(properties = {
         "spring.jpa.hibernate.ddl-auto=validate",
-        "spring.sql.init.mode=never",
+        "spring.sql.init.mode=always",
+        "spring.sql.init.schema-locations=classpath:db/withdrawal-saga.sql",
         "spring.flyway.enabled=false",
         "spring.liquibase.enabled=false"
 })
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @ActiveProfiles("dev")
-@Import(MatchService.class)
+@Import({MatchService.class, com.example.sporty.features.exerciseMatching.withdrawal.MatchUserGuardService.class})
 class MatchIntegrationTest {
     private static final LocalDateTime START = LocalDateTime.of(2026, 10, 10, 18, 0);
     private static final AtomicLong USER_IDS = new AtomicLong(10_000L);
