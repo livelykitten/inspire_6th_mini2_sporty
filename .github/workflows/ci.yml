@@ -28,6 +28,7 @@ jobs:
           - { service: user-service, wip: false } # W-07 머지됨 (PR #12 · #13)
           - { service: match-service, wip: false } # W-08
           - { service: ai-service, wip: false } # W-10 머지됨 (PR #24)
+          - { service: notification-service, wip: false } # W-49 (PR #76)
     defaults:
       run:
         working-directory: backend
@@ -80,6 +81,7 @@ jobs:
           - { service: user-service, wip: false }
           - { service: match-service, wip: false }
           - { service: ai-service, wip: false } # W-10 머지됨 (PR #24)
+          - { service: notification-service, wip: false } # W-49 (PR #76)
     steps:
       - name: 코드 내려받기
         uses: actions/checkout@v4
