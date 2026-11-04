@@ -26,6 +26,8 @@ services:
     ports: !reset []
   redis:
     ports: !reset []
+  zipkin:
+    ports: !override ["127.0.0.1:9411:9411"] # W-33. 화면은 SSM 포트 포워딩으로만 본다 (외부 공개 안 함)
 
   discovery-service:
     ports: !override ["127.0.0.1:8761:8761"]
