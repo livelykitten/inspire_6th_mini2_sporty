@@ -4,8 +4,24 @@
 sporty:
   config-check: config-repo loaded
 
+spring:
+  reactor:
+    context-propagation: auto
+  cloud:
+    openfeign:
+      micrometer:
+        enabled: true
+
 management:
   endpoints:
     web:
       exposure:
         include: health,info
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLING_PROBABILITY:1.0}
+    propagation:
+      type: w3c
+  zipkin:
+    tracing:
+      endpoint: ${ZIPKIN_ENDPOINT:http://localhost:9411/api/v2/spans}

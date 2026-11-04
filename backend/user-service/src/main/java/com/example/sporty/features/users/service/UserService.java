@@ -119,7 +119,8 @@ public class UserService {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         Long userId = Long.parseLong(auth.getName());
 
-        UserEntity user = userRepository.findById(userId)
+        // 동일 회원의 탈퇴 접수를 직렬화해 MariaDB 동시 UPDATE 충돌을 방지한다.
+        UserEntity user = userRepository.findCurrentByIdForUpdate(userId)
                 .orElseThrow(UserNotFoundException::new);
 
         if (password == null || password.isBlank()
