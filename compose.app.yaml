@@ -101,6 +101,7 @@ services:
       DB_URL: jdbc:mariadb://match-db:3306/match_db
       DB_USERNAME: ${MATCH_DB_USER:-match_svc}
       DB_PASSWORD: ${MATCH_DB_PASSWORD:-match_svc}
+      SAGA_FAIL_CLEANUP: ${SAGA_FAIL_CLEANUP:-false}
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
     ports:
       - "8002:8002"
