@@ -1,6 +1,7 @@
 package com.example.sporty.features.exerciseMatching.withdrawal;
 
 import java.util.Map;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.springframework.context.annotation.*;
@@ -25,13 +26,19 @@ public class WithdrawalKafkaConfiguration {
         factory.setConsumerFactory(new DefaultKafkaConsumerFactory<>(properties));
         factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.MANUAL_IMMEDIATE);
         factory.getContainerProperties().setSyncCommits(true);
+        factory.setCommonErrorHandler(withdrawalErrorHandler(recoverer));
+        return factory;
+    }
+
+    DefaultErrorHandler withdrawalErrorHandler(WithdrawalExhaustedRecoverer recoverer) {
         var handler = new DefaultErrorHandler(recoverer, new FixedBackOff(1000L, 3L));
         handler.setAckAfterHandle(false);
-        handler.setCommitRecovered(false);
+        // SeekUtils commits recovered offset+1 only after recoverer returns normally.
+        handler.setCommitRecovered(true);
+        handler.addNotRetryableExceptions(JsonProcessingException.class, WithdrawalCommitUncertainException.class);
         handler.setRetryListeners((record, exception, attempt) ->
                 log.warn("[KAFKA] withdrawal retry topic={} partition={} offset={} attempt={}",
                         record.topic(), record.partition(), record.offset(), attempt));
-        factory.setCommonErrorHandler(handler);
-        return factory;
+        return handler;
     }
 }

@@ -2,7 +2,7 @@ package com.example.sporty.features.exerciseMatching.withdrawal;
 
 import java.time.LocalDateTime;
 
-/** W-32 contract only. Not emitted by the W-22 success path. */
+/** EV-04 is recorded only after a confirmed cleanup rollback and guarded outcome checks. */
 public record WithdrawalFailedEvent(String eventId,
         @com.fasterxml.jackson.annotation.JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss") LocalDateTime occurredAt, String sagaId,
         Long userId, String reason) {

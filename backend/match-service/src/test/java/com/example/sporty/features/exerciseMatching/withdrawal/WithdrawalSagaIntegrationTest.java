@@ -38,7 +38,7 @@ import org.springframework.transaction.support.*;
 })
 @Import({MatchService.class, MatchUserGuardService.class, WithdrawalService.class,
         WithdrawalTransactionService.class, WithdrawalCleanupHook.class, MatchOutboxSender.class,
-        WithdrawalFailureService.class, WithdrawalSagaIntegrationTest.JsonConfig.class})
+        WithdrawalFailureService.class, WithdrawalOutcomeService.class, WithdrawalSagaIntegrationTest.JsonConfig.class})
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class WithdrawalSagaIntegrationTest {
     @org.springframework.boot.test.context.TestConfiguration(proxyBeanMethods = false)
@@ -56,7 +56,7 @@ class WithdrawalSagaIntegrationTest {
     @Autowired MatchOutboxRepository outbox;
     @Autowired MatchOutboxSender sender;
     @Autowired WithdrawalFailureService failures;
-    @Autowired PlatformTransactionManager transactionManager;
+    @MockitoSpyBean PlatformTransactionManager transactionManager;
     @Autowired ObjectMapper mapper;
     @Autowired jakarta.persistence.EntityManager entityManager;
     @MockitoBean UserServiceClient users;
@@ -291,9 +291,47 @@ class WithdrawalSagaIntegrationTest {
     }
 
     @Test
-    void unfinishedCompensationThrowsRatherThanReportingSuccess() {
+    void unprovenFailureDoesNotRecordCompensation() {
         assertThatThrownBy(() -> failures.recordFailure(event, new IllegalStateException("failure")))
-                .isInstanceOf(UnsupportedOperationException.class);
+                .isInstanceOf(IllegalStateException.class).hasMessage("Cannot safely compensate withdrawal");
+        assertUnchanged();
+    }
+
+    @Test
+    void lostSuccessfulCommitAcknowledgmentCannotProduceFailureOutcome() throws Exception {
+        doAnswer(invocation -> {
+            boolean cleanup = invocation.<org.springframework.transaction.TransactionStatus>getArgument(0).isNewTransaction()
+                    && String.valueOf(TransactionSynchronizationManager.getCurrentTransactionName())
+                    .endsWith("WithdrawalTransactionService.complete");
+            var result = invocation.callRealMethod();
+            if (cleanup) throw new org.springframework.transaction.TransactionSystemException("lost commit reply");
+            return result;
+        }).when(transactionManager).commit(any());
+        var error = catchThrowableOfType(() -> withdrawals.handle(event), WithdrawalCommitUncertainException.class);
+        assertThat(processed.existsById(event.eventId())).isTrue();
+        assertThat(outbox.findAll()).extracting(MatchOutbox::getTopic).containsExactly(WithdrawalCompletedEvent.TOPIC);
+        new WithdrawalExhaustedRecoverer(mapper, users, failures, new WithdrawalDltPublisher(kafka)).accept(
+                new org.apache.kafka.clients.consumer.ConsumerRecord<>(WithdrawalRequestedEvent.TOPIC, 0, 1L,
+                        "7", mapper.writeValueAsString(event)), error);
+        assertThat(outbox.count()).isEqualTo(1);
+        assertThat(guards.findById(7L).orElseThrow().isBlocked()).isTrue();
+        verifyNoInteractions(kafka);
+    }
+
+    @Test
+    void commitPhaseRollbackIsNotMistakenForConfirmedCleanupFailure() throws Exception {
+        doAnswer(invocation -> {
+            if (invocation.<org.springframework.transaction.TransactionStatus>getArgument(0).isNewTransaction()
+                    && String.valueOf(TransactionSynchronizationManager.getCurrentTransactionName())
+                    .endsWith("WithdrawalTransactionService.complete")) {
+                transactionManager.rollback(invocation.getArgument(0));
+                throw new org.springframework.transaction.TransactionSystemException("commit outcome unavailable");
+            }
+            return invocation.callRealMethod();
+        }).when(transactionManager).commit(any());
+        var error = catchThrowableOfType(() -> withdrawals.handle(event), WithdrawalCommitUncertainException.class);
+        assertUnchanged();
+        assertThatThrownBy(() -> failures.recordFailure(event, error)).hasMessage("Cannot safely compensate withdrawal");
         assertUnchanged();
     }
 

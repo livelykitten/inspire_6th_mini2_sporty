@@ -3,6 +3,13 @@
 .env
 .env.*
 !.env.example
+!.env.aws.example
 
 ## macOS ##
 .DS_Store
+
+# 테스트 실행 결과 (tests/pipeline, tests/load)
+tests/pipeline/results/
+tests/load/results/
+__pycache__/
+*.pyc

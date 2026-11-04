@@ -32,3 +32,12 @@ management:
     web:
       exposure:
         include: health,info
+  # Config 서버는 중앙 설정의 소비자가 아니므로 자체 추적 설정을 둔다.
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLING_PROBABILITY:1.0}
+    propagation:
+      type: w3c
+  zipkin:
+    tracing:
+      endpoint: ${ZIPKIN_ENDPOINT:http://localhost:9411/api/v2/spans}

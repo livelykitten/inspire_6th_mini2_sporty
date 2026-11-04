@@ -21,8 +21,6 @@ spring:
     retry:
       # One attempt, with no automatic retries extending the OpenAI timeout.
       max-attempts: 1
-    openai:
-      api-key: ${OPEN_AI_KEY:}
 
 # Applied to synchronous OpenAI HTTP calls by OpenAiHttpClientConfig.
 ai:

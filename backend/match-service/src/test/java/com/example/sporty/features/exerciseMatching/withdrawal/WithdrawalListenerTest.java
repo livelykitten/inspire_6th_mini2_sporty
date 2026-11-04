@@ -45,10 +45,14 @@ class WithdrawalListenerTest {
     }
 
     @Test
-    void unimplementedRecoveryMustThrowAndNeverSilentlyDropRecord() {
+    void dltFailureMustThrowAndNeverSilentlyDropRecord() {
         var record = new ConsumerRecord<String, String>(WithdrawalRequestedEvent.TOPIC, 0, 0L, "7", "{}");
-        assertThatThrownBy(() -> new WithdrawalExhaustedRecoverer().accept(record, new IllegalStateException("failed")))
-                .isInstanceOf(IllegalStateException.class).hasMessageContaining("retain original offset");
+        var recoverer = new WithdrawalExhaustedRecoverer(mapper,
+                mock(com.example.sporty.features.exerciseMatching.client.UserServiceClient.class),
+                mock(WithdrawalFailureService.class),
+                new WithdrawalDltPublisher(mock(org.springframework.kafka.core.KafkaTemplate.class)));
+        assertThatThrownBy(() -> recoverer.accept(record, new IllegalStateException("failed")))
+                .isInstanceOf(org.springframework.kafka.KafkaException.class).hasMessageContaining("retain original offset");
     }
 
     @Test

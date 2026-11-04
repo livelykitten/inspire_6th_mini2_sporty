@@ -21,15 +21,18 @@ COPY . .
 # Windows 에서 체크아웃한 gradlew 는 CRLF 라 리눅스에서 실행되지 않으므로 복사 뒤에 줄바꿈을 맞춘다.
 RUN sed -i 's/\r$//' gradlew && chmod +x gradlew
 
-RUN --mount=type=cache,target=/root/.gradle \
+# 캐시 마운트는 sharing=locked: 이미지를 병렬로 빌드해도 Gradle 사용자 홈(/root/.gradle)을 동시에 쓰지 않게 직렬화한다.
+# (shared 이면 캐시가 빈 상태에서 Gradle 락 경합으로 'Timeout waiting to lock journal cache' 로 실패한다)
+RUN --mount=type=cache,target=/root/.gradle,sharing=locked \
     ./gradlew :discovery-service:bootJar -x test --no-daemon \
     && cp discovery-service/build/libs/discovery-service-*-SNAPSHOT.jar /workspace/app.jar
 
-FROM eclipse-temurin:17-jre AS discovery-service
+# 런타임은 Alpine JRE(257MB, Ubuntu JRE 는 432MB)로 이미지를 줄인다. Alpine 에는 curl · bash 가 없다 (헬스체크는 busybox wget 사용).
+FROM eclipse-temurin:17-jre-alpine AS discovery-service
 ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75 -Duser.timezone=Asia/Seoul"
 WORKDIR /app
 
-RUN useradd --system --uid 1001 sporty
+RUN addgroup -S -g 1001 sporty && adduser -S -u 1001 -G sporty sporty
 COPY --from=discovery-service-build --chown=sporty:sporty /workspace/app.jar app.jar
 USER sporty
 
@@ -53,16 +56,19 @@ COPY . .
 # Windows 에서 체크아웃한 gradlew 는 CRLF 라 리눅스에서 실행되지 않으므로 복사 뒤에 줄바꿈을 맞춘다.
 RUN sed -i 's/\r$//' gradlew && chmod +x gradlew
 
-RUN --mount=type=cache,target=/root/.gradle \
+# 캐시 마운트는 sharing=locked: 이미지를 병렬로 빌드해도 Gradle 사용자 홈(/root/.gradle)을 동시에 쓰지 않게 직렬화한다.
+# (shared 이면 캐시가 빈 상태에서 Gradle 락 경합으로 'Timeout waiting to lock journal cache' 로 실패한다)
+RUN --mount=type=cache,target=/root/.gradle,sharing=locked \
     ./gradlew :config-service:bootJar -x test --no-daemon \
     && cp config-service/build/libs/config-service-*-SNAPSHOT.jar /workspace/app.jar
 
-FROM eclipse-temurin:17-jre AS config-service
+# 런타임은 Alpine JRE(257MB, Ubuntu JRE 는 432MB)로 이미지를 줄인다. Alpine 에는 curl · bash 가 없다 (헬스체크는 busybox wget 사용).
+FROM eclipse-temurin:17-jre-alpine AS config-service
 ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75 -Duser.timezone=Asia/Seoul"
 ENV CONFIG_REPO_PATH=file:/config-repo
 WORKDIR /app
 
-RUN useradd --system --uid 1001 sporty
+RUN addgroup -S -g 1001 sporty && adduser -S -u 1001 -G sporty sporty
 COPY --from=config-service-build --chown=sporty:sporty /workspace/app.jar app.jar
 COPY --from=config-repo --chown=sporty:sporty . /config-repo
 USER sporty
@@ -86,15 +92,18 @@ COPY . .
 # Windows 에서 체크아웃한 gradlew 는 CRLF 라 리눅스에서 실행되지 않으므로 복사 뒤에 줄바꿈을 맞춘다.
 RUN sed -i 's/\r$//' gradlew && chmod +x gradlew
 
-RUN --mount=type=cache,target=/root/.gradle \
+# 캐시 마운트는 sharing=locked: 이미지를 병렬로 빌드해도 Gradle 사용자 홈(/root/.gradle)을 동시에 쓰지 않게 직렬화한다.
+# (shared 이면 캐시가 빈 상태에서 Gradle 락 경합으로 'Timeout waiting to lock journal cache' 로 실패한다)
+RUN --mount=type=cache,target=/root/.gradle,sharing=locked \
     ./gradlew :gateway-service:bootJar -x test --no-daemon \
     && cp gateway-service/build/libs/gateway-service-*-SNAPSHOT.jar /workspace/app.jar
 
-FROM eclipse-temurin:17-jre AS gateway-service
+# 런타임은 Alpine JRE(257MB, Ubuntu JRE 는 432MB)로 이미지를 줄인다. Alpine 에는 curl · bash 가 없다 (헬스체크는 busybox wget 사용).
+FROM eclipse-temurin:17-jre-alpine AS gateway-service
 ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75 -Duser.timezone=Asia/Seoul"
 WORKDIR /app
 
-RUN useradd --system --uid 1001 sporty
+RUN addgroup -S -g 1001 sporty && adduser -S -u 1001 -G sporty sporty
 COPY --from=gateway-service-build --chown=sporty:sporty /workspace/app.jar app.jar
 USER sporty
 
@@ -117,15 +126,18 @@ COPY . .
 # Windows 에서 체크아웃한 gradlew 는 CRLF 라 리눅스에서 실행되지 않으므로 복사 뒤에 줄바꿈을 맞춘다.
 RUN sed -i 's/\r$//' gradlew && chmod +x gradlew
 
-RUN --mount=type=cache,target=/root/.gradle \
+# 캐시 마운트는 sharing=locked: 이미지를 병렬로 빌드해도 Gradle 사용자 홈(/root/.gradle)을 동시에 쓰지 않게 직렬화한다.
+# (shared 이면 캐시가 빈 상태에서 Gradle 락 경합으로 'Timeout waiting to lock journal cache' 로 실패한다)
+RUN --mount=type=cache,target=/root/.gradle,sharing=locked \
     ./gradlew :user-service:bootJar -x test --no-daemon \
     && cp user-service/build/libs/user-service-*-SNAPSHOT.jar /workspace/app.jar
 
-FROM eclipse-temurin:17-jre AS user-service
+# 런타임은 Alpine JRE(257MB, Ubuntu JRE 는 432MB)로 이미지를 줄인다. Alpine 에는 curl · bash 가 없다 (헬스체크는 busybox wget 사용).
+FROM eclipse-temurin:17-jre-alpine AS user-service
 ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75 -Duser.timezone=Asia/Seoul"
 WORKDIR /app
 
-RUN useradd --system --uid 1001 sporty
+RUN addgroup -S -g 1001 sporty && adduser -S -u 1001 -G sporty sporty
 COPY --from=user-service-build --chown=sporty:sporty /workspace/app.jar app.jar
 USER sporty
 
@@ -148,15 +160,18 @@ COPY . .
 # Windows 에서 체크아웃한 gradlew 는 CRLF 라 리눅스에서 실행되지 않으므로 복사 뒤에 줄바꿈을 맞춘다.
 RUN sed -i 's/\r$//' gradlew && chmod +x gradlew
 
-RUN --mount=type=cache,target=/root/.gradle \
+# 캐시 마운트는 sharing=locked: 이미지를 병렬로 빌드해도 Gradle 사용자 홈(/root/.gradle)을 동시에 쓰지 않게 직렬화한다.
+# (shared 이면 캐시가 빈 상태에서 Gradle 락 경합으로 'Timeout waiting to lock journal cache' 로 실패한다)
+RUN --mount=type=cache,target=/root/.gradle,sharing=locked \
     ./gradlew :match-service:bootJar -x test --no-daemon \
     && cp match-service/build/libs/match-service-*-SNAPSHOT.jar /workspace/app.jar
 
-FROM eclipse-temurin:17-jre AS match-service
+# 런타임은 Alpine JRE(257MB, Ubuntu JRE 는 432MB)로 이미지를 줄인다. Alpine 에는 curl · bash 가 없다 (헬스체크는 busybox wget 사용).
+FROM eclipse-temurin:17-jre-alpine AS match-service
 ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75 -Duser.timezone=Asia/Seoul"
 WORKDIR /app
 
-RUN useradd --system --uid 1001 sporty
+RUN addgroup -S -g 1001 sporty && adduser -S -u 1001 -G sporty sporty
 COPY --from=match-service-build --chown=sporty:sporty /workspace/app.jar app.jar
 USER sporty
 
@@ -179,15 +194,18 @@ COPY . .
 # Windows 에서 체크아웃한 gradlew 는 CRLF 라 리눅스에서 실행되지 않으므로 복사 뒤에 줄바꿈을 맞춘다.
 RUN sed -i 's/\r$//' gradlew && chmod +x gradlew
 
-RUN --mount=type=cache,target=/root/.gradle \
+# 캐시 마운트는 sharing=locked: 이미지를 병렬로 빌드해도 Gradle 사용자 홈(/root/.gradle)을 동시에 쓰지 않게 직렬화한다.
+# (shared 이면 캐시가 빈 상태에서 Gradle 락 경합으로 'Timeout waiting to lock journal cache' 로 실패한다)
+RUN --mount=type=cache,target=/root/.gradle,sharing=locked \
     ./gradlew :facility-service:bootJar -x test --no-daemon \
     && cp facility-service/build/libs/facility-service-*-SNAPSHOT.jar /workspace/app.jar
 
-FROM eclipse-temurin:17-jre AS facility-service
+# 런타임은 Alpine JRE(257MB, Ubuntu JRE 는 432MB)로 이미지를 줄인다. Alpine 에는 curl · bash 가 없다 (헬스체크는 busybox wget 사용).
+FROM eclipse-temurin:17-jre-alpine AS facility-service
 ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75 -Duser.timezone=Asia/Seoul"
 WORKDIR /app
 
-RUN useradd --system --uid 1001 sporty
+RUN addgroup -S -g 1001 sporty && adduser -S -u 1001 -G sporty sporty
 COPY --from=facility-service-build --chown=sporty:sporty /workspace/app.jar app.jar
 USER sporty
 
@@ -210,15 +228,18 @@ COPY . .
 # Windows 에서 체크아웃한 gradlew 는 CRLF 라 리눅스에서 실행되지 않으므로 복사 뒤에 줄바꿈을 맞춘다.
 RUN sed -i 's/\r$//' gradlew && chmod +x gradlew
 
-RUN --mount=type=cache,target=/root/.gradle \
+# 캐시 마운트는 sharing=locked: 이미지를 병렬로 빌드해도 Gradle 사용자 홈(/root/.gradle)을 동시에 쓰지 않게 직렬화한다.
+# (shared 이면 캐시가 빈 상태에서 Gradle 락 경합으로 'Timeout waiting to lock journal cache' 로 실패한다)
+RUN --mount=type=cache,target=/root/.gradle,sharing=locked \
     ./gradlew :ai-service:bootJar -x test --no-daemon \
     && cp ai-service/build/libs/ai-service-*-SNAPSHOT.jar /workspace/app.jar
 
-FROM eclipse-temurin:17-jre AS ai-service
+# 런타임은 Alpine JRE(257MB, Ubuntu JRE 는 432MB)로 이미지를 줄인다. Alpine 에는 curl · bash 가 없다 (헬스체크는 busybox wget 사용).
+FROM eclipse-temurin:17-jre-alpine AS ai-service
 ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75 -Duser.timezone=Asia/Seoul"
 WORKDIR /app
 
-RUN useradd --system --uid 1001 sporty
+RUN addgroup -S -g 1001 sporty && adduser -S -u 1001 -G sporty sporty
 COPY --from=ai-service-build --chown=sporty:sporty /workspace/app.jar app.jar
 USER sporty
 

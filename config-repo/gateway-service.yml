@@ -13,6 +13,10 @@ spring:
                 allowed-headers: Authorization, Content-Type, Refresh-Token
                 exposed-headers: Authorization
                 allow-credentials: true
+          # 서비스가 꺼져 있을 때 연결을 오래 붙잡지 않게 연결 대기만 2초로 제한 (#49, 기본값은 OS 대기 시간 ~21초)
+          # 응답 대기(response-timeout)는 AI 호출이 길 수 있어 걸지 않는다
+          httpclient:
+            connect-timeout: 2000
           default-filters:
             # 서비스에 CORS 가 남아 있어도 헤더가 두 번 붙지 않게 (두 번 붙으면 브라우저가 막음)
             - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials, RETAIN_FIRST
