@@ -1,0 +1,8 @@
+# 운영(prod 프로필) 공통 (요구사항 MSA-04: 프로필 local · dev · prod).
+# 이번 프로젝트는 운영 서버가 없고 배포는 dev 프로필을 쓴다. 운영으로 띄울 때 SPRING_PROFILES_ACTIVE=prod 로 쓴다.
+# application.yml → {서비스}.yml → 이 파일 → {서비스}-prod.yml 순서로 뒤에 있는 값이 이긴다.
+management:
+  tracing:
+    sampling:
+      # 요청마다 추적하면 Zipkin 으로 보내는 양이 많아서 운영은 10% 만 표본으로 남긴다 (로컬 · dev 는 100%)
+      probability: ${TRACING_SAMPLING_PROBABILITY:0.1}
