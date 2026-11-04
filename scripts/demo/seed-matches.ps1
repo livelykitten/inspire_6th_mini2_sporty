@@ -63,10 +63,27 @@ function Find-OwnedDemoMatch($account, [string]$title) {
     $matches = @(Get-MyMatches $account | Where-Object {
         $_.title -ceq $title -and $_.role -eq 'OWNER'
     })
-    if ($matches.Count -gt 1) {
-        throw "Duplicate demo matches already exist for title: $title"
+
+    $now = Get-Date
+    $reusable = @($matches | Where-Object {
+        $startAt = [datetime]::MinValue
+        $hasValidStartAt = [datetime]::TryParse(
+            [string]$_.startAt,
+            [Globalization.CultureInfo]::InvariantCulture,
+            [Globalization.DateTimeStyles]::AssumeLocal,
+            [ref]$startAt
+        )
+        $hasValidStartAt -and $startAt -gt $now -and $_.status -eq 'RECRUITING'
+    })
+
+    if ($reusable.Count -gt 1) {
+        throw "Multiple reusable demo matches already exist for title: $title"
     }
-    return $(if ($matches.Count -eq 1) { $matches[0] } else { $null })
+    if ($matches.Count -gt $reusable.Count) {
+        Write-Host ("owner match: {0} ignored={1} (past, invalid start time, or not recruiting)" -f
+            $title, ($matches.Count - $reusable.Count))
+    }
+    return $(if ($reusable.Count -eq 1) { $reusable[0] } else { $null })
 }
 
 function New-MatchBody([long]$serviceId, [string]$title, [string]$description, [int]$capacity) {
