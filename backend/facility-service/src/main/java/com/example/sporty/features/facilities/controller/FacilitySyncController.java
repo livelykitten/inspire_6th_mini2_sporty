@@ -19,6 +19,6 @@ public class FacilitySyncController {
 
     @PostMapping("/sync")
     public ResponseEntity<SyncResult> sync() {
-        return ResponseEntity.ok(facilitySyncService.syncAll());
+        return ResponseEntity.ok(facilitySyncService.syncAll(true));
     }
 }

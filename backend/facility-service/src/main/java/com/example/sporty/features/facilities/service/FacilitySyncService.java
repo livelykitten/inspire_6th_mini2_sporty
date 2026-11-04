@@ -58,6 +58,10 @@ public class FacilitySyncService {
     private final TransactionTemplate transactionTemplate;
 
     public SyncResult syncAll() {
+        return syncAll(false);
+    }
+
+    public SyncResult syncAll(boolean publishAll) {
         List<Row> rows = apiClient.fetchAll();
         if (rows.isEmpty()) {
             throw new IllegalStateException(
@@ -66,7 +70,7 @@ public class FacilitySyncService {
         }
 
         SyncResult result = transactionTemplate.execute(
-                status -> synchronize(rows)
+                status -> synchronize(rows, publishAll)
         );
 
         if (result == null) {
@@ -84,7 +88,7 @@ public class FacilitySyncService {
         return result;
     }
 
-    private SyncResult synchronize(List<Row> rows) {
+    private SyncResult synchronize(List<Row> rows, boolean publishAll) {
         Map<LocationKey, LocationEntity> locationCache = loadLocationCache();
         Map<String, ServiceEntity> serviceCache = loadServiceCache();
         Set<String> seenServiceIds = new HashSet<>();
@@ -142,7 +146,7 @@ public class FacilitySyncService {
 
                 service.update(location, serviceName, status, startTime, endTime, isFree, url, reservationDeadlineAt);
                 updatedCount++;
-                if (changed) {
+                if (changed || publishAll) {
                     saveOutbox(service);
                 }
             }
