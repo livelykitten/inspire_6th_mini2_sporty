@@ -74,3 +74,39 @@ test('재발급 중 로그아웃하면 뒤늦은 응답으로 세션을 복원�
   expect(localStorage.getItem('at')).toBeNull();
   expect(adapter).toHaveBeenCalledTimes(2);
 });
+
+test.each(['get', 'delete'])(
+  '탈퇴 완료 401은 %s 요청에서 재발급 없이 원래 오류를 전달한다',
+  async method => {
+    localStorage.setItem('userId', '6');
+
+    adapter.mockImplementation(config =>
+      failure(config, 401, 'USER_ALREADY_WITHDRAWN')
+    );
+
+    await expect(
+      api.request({
+        method,
+        url: '/api/users/me'
+      })
+    ).rejects.toMatchObject({
+      response: {
+        status: 401,
+        data: {
+          code: 'USER_ALREADY_WITHDRAWN'
+        }
+      }
+    });
+
+    expect(adapter).toHaveBeenCalledTimes(1);
+    expect(
+      adapter.mock.calls.some(
+        ([config]) => config.url === '/api/auth/refresh'
+      )
+    ).toBe(false);
+
+    expect(localStorage.getItem('at')).toBe('old-at');
+    expect(localStorage.getItem('rt')).toBe('existing-rt');
+    expect(localStorage.getItem('userId')).toBe('6');
+  }
+);

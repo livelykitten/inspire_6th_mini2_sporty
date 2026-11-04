@@ -30,6 +30,11 @@ api.interceptors.response.use(
       return Promise.reject(error);
     }
 
+    // 탈퇴 완료 응답은 토큰 재발급으로 해결되지 않는다.
+    if (error.response?.data?.code === 'USER_ALREADY_WITHDRAWN') {
+      return Promise.reject(error);
+    }
+
     // 로그인 실패나 로그아웃 요청에서 재발급 X
     const excludedUrls = ['/api/auth/login', '/api/auth/logout', '/api/auth/refresh', '/api/users'];
     if (excludedUrls.includes(originalRequest.url)) return Promise.reject(error);

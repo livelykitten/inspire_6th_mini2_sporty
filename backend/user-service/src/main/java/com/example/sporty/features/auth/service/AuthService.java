@@ -80,10 +80,11 @@ public class AuthService {
             throw new InvalidRefreshTokenException();
         }
 
-        // 3. 정상 회원 여부 확인
+        // 3. 탈퇴 완료 회원은 토큰 재발급 거절
         UserEntity user = userRepository.findById(userId)
-                .orElseThrow(InvalidRefreshTokenException::new);
-        if (user.getStatus() != UserStatus.ACTIVE) {
+            .orElseThrow(InvalidRefreshTokenException::new);
+
+        if (user.getStatus() == UserStatus.WITHDRAWN) {
             throw new InvalidRefreshTokenException();
         }
 
