@@ -45,7 +45,7 @@ AI 서비스는 로컬 `.env`에서 `OPEN_AI_KEY`를 공급합니다. 서비스 
 
 ### Docker Compose 로 실행할 때
 
-Compose 로 띄울 때는 `backend/ai-service/.env` 가 아니라 **저장소 루트 `.env`** 의 `OPEN_AI_KEY` 를 씁니다 (`cp .env.example .env` 후 값 입력). Compose 가 이 값을 컨테이너 환경변수로 넣어 주면 Config Server 가 내려준 `${OPEN_AI_KEY:}` 가 그 값으로 채워집니다. 전체 스택 Compose(`compose.app.yaml`)는 W-34 통합 PR 에서 들어오며, 그 전에는 위의 로컬 실행 방식을 따릅니다.
+Compose 로 띄울 때는 `backend/ai-service/.env` 가 아니라 **저장소 루트 `.env`** 의 `OPEN_AI_KEY` 를 씁니다 (`cp .env.example .env` 후 값 입력). 루트 `.env` 가 모든 컨테이너에 자동으로 주입되는 것은 아니므로 Compose 의 `environment`(또는 `env_file`)로 AI 컨테이너에 `OPEN_AI_KEY` 를 명시적으로 넘겨야 하고, 그러면 Config Server 가 내려준 `${OPEN_AI_KEY:}` 가 그 값으로 채워집니다. 전체 스택 Compose(`compose.app.yaml`)는 W-34 통합 PR 에서 들어오며, 그 전에는 위의 로컬 실행 방식을 따릅니다.
 
 키와 `.env`는 커밋하지 않습니다. 배포용 암호화 설정은 [Config 가이드](../../config-repo/README.md)를 따릅니다.
 
