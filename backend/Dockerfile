@@ -78,7 +78,7 @@ ENTRYPOINT ["java", "-jar", "/app/app.jar"]
 
 # ----- [gateway-service] 담당: 김우석 (@woo1956) · 원본: backend/gateway-service/Dockerfile -----
 # 담당: 김우석 (@woo1956) · 리뷰: 반정욱 (@salieri009)
-# 서비스: gateway-service · 포트 8000 · 의존: discovery, JWT_SECRET_KEY (user-service 와 같은 값), 업무 서비스 4개로 라우팅
+# 서비스: gateway-service · 포트 8000 · 의존: discovery, config-service (라우트 · jwt.secret, 없으면 기동 실패), JWT_SECRET_KEY (배포 dev 프로필, user-service 와 같은 값), 업무 서비스 4개로 라우팅
 # 작업 위치: backend/gateway-service/Dockerfile (이 파일이 원본)
 # 수정 후: bash scripts/gen-master-dockerfile.sh 를 실행해 backend/Dockerfile(master)도 같이 커밋
 # 빌드: docker build -f backend/gateway-service/Dockerfile -t sporty/gateway-service:local backend
