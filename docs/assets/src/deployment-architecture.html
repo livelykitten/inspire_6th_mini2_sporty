@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>Sporty AWS Deployment</title>
+<link rel="stylesheet" href="common.css">
+<style>:root { --w: 1600px; --h: 1000px; }</style>
+</head>
+<body>
+<div class="card">
+  <div class="head">
+    <div class="eyebrow">Deployment · AWS</div>
+    <h1>CloudFormation 2-Stack 배포</h1>
+    <p>stack1 = 네트워크 · 데이터 · ECR · 시크릿 &nbsp;/&nbsp; stack2 = EC2 · ALB · 알람 · 대시보드</p>
+  </div>
+  <svg class="stage" id="stage" width="1600" height="1000" viewBox="0 0 1600 1000"></svg>
+  <div class="legend" style="right:40px; top:34px; width:360px">
+    <h4>EC2 위 컨테이너 12</h4>
+    <div class="row"><span class="sw" style="background:#7c3aed"></span>edge · nginx (SPA) · gateway</div>
+    <div class="row"><span class="sw" style="background:#10b981"></span>app · user · match · facility · ai · notification</div>
+    <div class="row"><span class="sw" style="background:#0ea5e9"></span>infra · eureka · config · kafka · redis · zipkin</div>
+    <h4 style="margin-top:12px">배포 방식</h4>
+    <div class="row">· <code>DeployMode=ecr</code> 이미지 pull / <code>build</code> EC2 직접 빌드</div>
+    <div class="row">· DB 는 compose 대신 RDS MariaDB 3대 (서비스당 1대)</div>
+    <div class="row">· 로컬: <code>k8s/</code> 매니페스트 (namespace <code>sporty</code>)</div>
+  </div>
+  <div class="legend" style="left:40px; bottom:36px; width:300px">
+    <h4>Legend</h4>
+    <div class="row"><span class="ln" style="border-color:#7c3aed"></span>사용자 트래픽</div>
+    <div class="row"><span class="ln" style="border-color:#475569"></span>JDBC 3306 (SG: EC2 만 허용)</div>
+    <div class="row"><span class="ln dash" style="border-color:#94a3b8"></span>NAT egress → 외부 API</div>
+    <div class="row"><span class="ln dash" style="border-color:#f97316"></span>이미지 · 시크릿 · 로그 · 알람</div>
+  </div>
+</div>
+<script src="iso.js"></script>
+<script>
+isoReady(() => {
+  const iso = new Iso(document.getElementById('stage'), { scale: 25, ox: 745, oy: 392 });
+  const plat = (x, y, z, w, d, color, label, h = 0.3) => {
+    iso.slab(x, y, z, w, d, h, color, { stroke: isoShade(color, -0.12) });
+    iso.faceText(x + 0.45, y + d - 0.55, z + h, label, { face: 'top', size: 11.5, color: isoShade(color, -0.6), mono: true, spacing: '0.1em' });
+  };
+  const S = { gw: '#7c3aed', nginx: '#16a34a', user: '#3b82f6', match: '#10b981', facility: '#f59e0b', ai: '#ec4899', noti: '#ef4444', infra: '#0ea5e9', kafka: '#1e293b', redis: '#dc2626', zipkin: '#f97316' };
+  const O = '#f97316';
+
+  // ── 플랫폼
+  plat(-1, -1, 0, 27, 17.2, '#f1f5f9', 'AWS CLOUD · ap-northeast-2');
+  plat(0, 0, 0.3, 22.6, 10, '#dbeafe', 'VPC 10.0.0.0/16 · 2 AZ');
+  plat(0.6, 0.6, 0.6, 4.6, 8.8, '#dcfce7', 'PUBLIC ×2', 0.25);
+  plat(6.0, 0.6, 0.6, 7.6, 8.8, '#ffedd5', 'PRIVATE APP ×2', 0.25);
+  plat(14.4, 0.6, 0.6, 7.6, 8.8, '#e0e7ff', 'PRIVATE DATA ×2', 0.25);
+
+  // ── 외부 (VPC 뒤)
+  iso.path3d([[2.9, 6.0, 1.6], [2.9, -3.6, 1.6]], { color: '#94a3b8', dash: '7 6', width: 2.4 });
+  iso.box(1.7, -6.2, 0.0, 2.4, 2.4, 1.4, '#0891b2');
+  iso.box(-2.4, -6.2, 0.0, 2.4, 2.4, 1.4, '#111827');
+
+  // ── 연결선 (뒤쪽)
+  iso.path3d([[-3.4, 3.2, 1.3], [1.6, 3.2, 1.3]], { color: '#7c3aed', width: 3 });
+  iso.path3d([[4.0, 3.2, 1.3], [6.7, 3.2, 1.3]], { color: '#7c3aed', width: 3 });
+  iso.path3d([[6.7, 7.0, 1.3], [4.0, 7.0, 1.3]], { color: '#94a3b8', dash: '7 6', width: 2.4 });
+  iso.path3d([[12.9, 5.0, 1.3], [15.0, 5.0, 1.3]], { color: '#475569', width: 2.6 });
+
+  // ── Public: ALB · NAT
+  iso.box(1.6, 2.0, 0.85, 2.4, 2.4, 1.4, '#7c3aed');
+  iso.box(1.6, 5.8, 0.85, 2.4, 2.4, 1.2, '#a855f7');
+
+  // ── Private app: EC2 + 컨테이너 12
+  iso.box(6.6, 1.2, 0.85, 6.3, 7.6, 0.9, '#ea580c', { gloss: false });
+  iso.faceText(6.9, 8.8, 1.3, 'EC2 t3.xlarge · Docker Compose', { face: 'left', size: 11, color: '#ffedd5', mono: true });
+  const grid = [
+    ['nginx', S.nginx], ['gateway', S.gw], ['eureka', S.infra],
+    ['user', S.user], ['match', S.match], ['config', '#0369a1'],
+    ['facility', S.facility], ['ai', S.ai], ['kafka', S.kafka],
+    ['notify', S.noti], ['zipkin', S.zipkin], ['redis', S.redis],
+  ];
+  grid.forEach(([name, c], i) => {
+    const col = i % 3, row = Math.floor(i / 3);
+    const x = 7.0 + col * 2.0, y = 1.55 + row * 1.85;
+    iso.box(x, y, 1.75, 1.6, 1.45, 0.75, c, { shadow: false, gloss: false });
+    iso.faceText(x + 0.8, y + 0.72, 2.5, name, { face: 'top', size: 9, color: '#ffffff', mono: true, weight: 700, anchor: 'middle' });
+  });
+
+  // ── Private data: RDS × 3
+  [2.4, 5.0, 7.6].forEach((y) => iso.cylinder(17.4, y, 0.85, 1.0, 1.7, '#2563eb'));
+
+  // ── 관리형 서비스 (VPC 밖)
+  const M = [
+    { x: 1.0, c: '#ea580c', t: 'ECR × 8', s: '서비스 7 + frontend' },
+    { x: 5.6, c: '#dc2626', t: 'Secrets Manager × 7', s: 'DB · JWT · OpenAI …' },
+    { x: 10.2, c: '#db2777', t: 'CloudWatch', s: '로그 9 · 알람 21 · 대시보드' },
+    { x: 14.8, c: '#e11d48', t: 'SNS', s: '알람 → 이메일' },
+    { x: 19.4, c: '#d97706', t: 'Lambda', s: 'Discord 웹훅' },
+  ];
+  // 관리형 → EC2 / 체인
+  iso.path3d([[2.1, 13.2, 1.0], [2.1, 10.6, 1.0], [7.4, 10.6, 1.0], [7.4, 8.85, 1.0]], { color: O, dash: '7 5', width: 2.4 });
+  iso.path3d([[6.7, 13.2, 1.0], [6.7, 11.4, 1.0], [9.6, 11.4, 1.0], [9.6, 8.85, 1.0]], { color: O, dash: '7 5', width: 2.4 });
+  iso.path3d([[11.3, 8.85, 1.0], [11.3, 13.15, 1.0]], { color: O, dash: '7 5', width: 2.4 });
+  iso.path3d([[12.4, 14.3, 0.9], [14.75, 14.3, 0.9]], { color: O, dash: '7 5', width: 2.4 });
+  iso.path3d([[17.0, 14.3, 0.9], [19.35, 14.3, 0.9]], { color: O, dash: '7 5', width: 2.4 });
+  iso.path3d([[-3.6, 14.3, 0.9], [0.95, 14.3, 0.9]], { color: O, dash: '7 5', width: 2.4 });
+  M.forEach((m) => iso.box(m.x, 13.2, 0.3, 2.2, 2.2, 1.4, m.c));
+
+  // ── 사용자 · GitHub Actions
+  iso.box(-6.0, 2.0, 0.0, 2.6, 2.4, 1.6, '#334155');
+  iso.box(-6.0, 13.1, 0.0, 2.4, 2.4, 1.6, '#111827');
+
+  // ── 라벨
+  const T = { size: 13, subSize: 11 };
+  iso.tag(-4.7, 3.2, 1.6, '사용자', 'Browser', { accent: '#334155', ...T });
+  iso.tag(-4.8, 14.3, 1.6, 'GitHub Actions', 'OIDC · build → push', { accent: '#111827', ...T });
+  iso.tag(2.8, 3.2, 2.25, 'ALB', ':80 / :443 → nginx :80', { accent: '#7c3aed', ...T });
+  iso.tag(2.8, 7.0, 2.05, 'NAT Gateway', '외부 API egress', { accent: '#a855f7', ...T, subMono: false });
+  iso.tag(2.9, -5.0, 1.4, '서울 열린데이터 API', '공공체육시설', { accent: '#0891b2', size: 12, subSize: 10.5, subMono: false });
+  iso.tag(-1.2, -5.0, 1.4, 'OpenAI API', 'Spring AI', { accent: '#111827', size: 12, subSize: 10.5 });
+  iso.tag(17.4, 5.0, 2.55, 'RDS MariaDB × 3', 'user_db · match_db · facility_db', { accent: '#2563eb', ...T, lift: 44, dx: 30 });
+  M.forEach((m) => iso.tag(m.x + 1.1, 14.3, 1.7, m.t, m.s, { accent: m.c, size: 12.5, subSize: 10.5, subMono: false }));
+  iso.chip(13.9, 5.0, 1.3, 'JDBC 3306', { bg: '#475569', mono: true, size: 10, dy: 18 });
+});
+</script>
+</body>
+</html>

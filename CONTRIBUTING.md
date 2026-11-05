@@ -20,7 +20,7 @@ cd backend
 ./gradlew.bat :user-service:bootRun      # 서비스 하나 실행
 ```
 
-서비스를 IDE · Gradle 로 띄우기 전에 `cp backend/.env.example backend/.env` 를 한 번 한다. 루트 `.env` 는 Compose 용이다 (README "MSA 로컬 실행: 환경변수 파일 위치").
+서비스를 IDE · Gradle 로 띄우기 전에 `cp backend/.env.example backend/.env` 를 한 번 한다. 루트 `.env` 는 Compose 용이다 ([docs/SETUP.md](docs/SETUP.md) "MSA 로컬 실행: 환경변수 파일 위치").
 
 ## 작업 흐름
 
