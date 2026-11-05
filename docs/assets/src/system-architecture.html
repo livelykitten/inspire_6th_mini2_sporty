@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>Sporty System Architecture</title>
+<link rel="stylesheet" href="common.css">
+<style>:root { --w: 1600px; --h: 1000px; }</style>
+</head>
+<body>
+<div class="card">
+  <div class="head">
+    <div class="eyebrow">System Architecture</div>
+    <h1>Sporty MSA 전체 구성</h1>
+    <p>React SPA → nginx → Spring Cloud Gateway → 비즈니스 서비스 5개 · 서비스별 DB · Kafka 이벤트</p>
+  </div>
+  <svg class="stage" id="stage" width="1600" height="1000" viewBox="0 0 1600 1000"></svg>
+  <div class="legend" style="left:40px; bottom:36px; width:330px">
+    <h4>Legend</h4>
+    <div class="row"><span class="ln" style="border-color:#7c3aed"></span>HTTP · Gateway 라우팅 <code>lb://</code></div>
+    <div class="row"><span class="ln dash" style="border-color:#f97316"></span>Kafka 이벤트 발행 · 구독</div>
+    <div class="row"><span class="ln" style="border-color:#475569"></span>JDBC · Redis</div>
+    <div class="row"><span class="ln dash" style="border-color:#94a3b8"></span>외부 API (HTTPS · SMTP)</div>
+    <div class="row"><span class="ln dot" style="border-color:#0ea5e9"></span>Eureka 등록 · Config 조회 · Bus refresh</div>
+  </div>
+  <div class="legend" style="right:40px; top:34px; width:auto">
+    <h4>At a glance</h4>
+    <div class="row"><span class="sw" style="background:#7c3aed"></span>앱 서비스 8 · 인프라 컨테이너 7</div>
+    <div class="row"><span class="sw" style="background:#10b981"></span>외부 API 21 · 서비스 간 API 6 (Feign 5)</div>
+    <div class="row"><span class="sw" style="background:#f97316"></span>Kafka 토픽 4 + DLT 4 + springCloudBus</div>
+    <div class="row"><span class="sw" style="background:#0ea5e9"></span>MariaDB 3 (DB per Service) · Redis 1</div>
+    <h4 style="margin-top:12px">Gateway routes</h4>
+    <div class="row"><code>/api/users · auth · profiles</code>→ user</div>
+    <div class="row"><code>/api/matches/**</code>→ match</div>
+    <div class="row"><code>/api/services/**</code>→ facility</div>
+    <div class="row"><code>/api/ai/**</code>→ ai</div>
+  </div>
+</div>
+<script src="iso.js"></script>
+<script>
+isoReady(() => {
+  const iso = new Iso(document.getElementById('stage'), { scale: 24, ox: 430, oy: 405 });
+  const C = {
+    gateway: '#7c3aed', user: '#3b82f6', match: '#10b981', facility: '#f59e0b', ai: '#ec4899', noti: '#ef4444',
+    nginx: '#16a34a', client: '#334155', infra: '#0ea5e9', db: '#0284c7', redis: '#dc2626', kafka: '#1e293b',
+    zipkin: '#f97316',
+  };
+  const zone = (x, y, w, d, color, label, atBack) => {
+    iso.slab(x, y, 0, w, d, 0.35, color, { stroke: isoShade(color, -0.12) });
+    iso.faceText(x + 0.5, atBack ? y + 0.7 : y + d - 0.6, 0.35, label, { face: 'top', size: 11.5, color: isoShade(color, -0.55), mono: true, spacing: '0.12em' });
+  };
+  const T = { size: 13, subSize: 11 };
+
+  // ── 플랫폼 (뒤 → 앞)
+  zone(22.4, -11.8, 14.0, 4.3, '#e2e8f0', 'EXTERNAL');
+  zone(8.8, -7.2, 16.0, 5.4, '#dbeafe', 'DATA · DB PER SERVICE', true);
+  zone(-2.6, -7.2, 10.4, 5.4, '#e0f2fe', 'COMMON · SPRING CLOUD', true);
+  zone(-8.2, -0.6, 4.9, 4.8, '#e2e8f0', 'CLIENT');
+  zone(-2.6, -0.6, 10.4, 4.8, '#ede9fe', 'EDGE');
+  zone(8.8, -0.6, 27.6, 4.8, '#f1f5f9', 'BUSINESS SERVICES');
+  zone(2.4, 6.2, 34.0, 4.2, '#fff7ed', 'MESSAGING · TRACING');
+
+  const SY = 0.4, SW = 2.8, SH = 2.2;
+  const svc = [
+    { k: 'user', x: 10.0, name: 'user-service', sub: ':8001 · 회원 · 인증 · JWT' },
+    { k: 'match', x: 15.6, name: 'match-service', sub: ':8002 · 매치 · 참가' },
+    { k: 'facility', x: 21.2, name: 'facility-service', sub: ':8003 · 공공시설 동기화' },
+    { k: 'ai', x: 26.8, name: 'ai-service', sub: ':8004 · Spring AI' },
+    { k: 'noti', x: 32.4, name: 'notification-service', sub: ':8010 · 장애 메일 알림' },
+  ];
+  const cx = (s) => s.x + SW / 2;
+
+  // ── 뒤쪽 연결선 (서비스 → DB / 외부)
+  const back = (x, y2, color, dash) => iso.path3d([[x, SY, 0.55], [x, y2, 0.55]], { color, dash, width: 2.4 });
+  back(11.0, -3.2, '#475569');
+  iso.path3d([[12.6, SY, 0.55], [12.6, -1.5, 0.55], [13.2, -2.75, 0.55]], { color: '#475569', width: 2.4 });
+  back(17.0, -3.2, '#475569');
+  back(22.0, -3.2, '#475569');
+  back(23.6, -8.6, '#94a3b8', '7 6');
+  back(cx(svc[3]), -8.6, '#94a3b8', '7 6');
+  back(cx(svc[4]), -8.6, '#94a3b8', '7 6');
+  // Common → 서비스 (Eureka · Config · Bus)
+  iso.path3d([[6.6, -4.2, 0.5], [8.2, -4.2, 0.5], [8.2, 1.0, 0.5], [9.9, 1.0, 0.5]], { color: '#0ea5e9', dash: '2 6', width: 2.8 });
+
+  // ── 외부
+  iso.box(23.0, -11.2, 0.35, 2.6, 2.6, 1.6, '#0891b2');
+  iso.box(26.9, -11.2, 0.35, 2.6, 2.6, 1.6, '#111827');
+  iso.box(32.5, -11.2, 0.35, 2.6, 2.6, 1.6, '#e11d48');
+
+  // ── 데이터
+  iso.cylinder(11.0, -4.2, 0.35, 1.0, 2.0, C.db);
+  iso.cylinder(13.7, -3.4, 0.35, 0.68, 1.3, C.redis, { bands: 1 });
+  iso.cylinder(17.0, -4.2, 0.35, 1.0, 2.0, C.db);
+  iso.cylinder(22.0, -4.2, 0.35, 1.0, 2.0, C.db);
+
+  // ── Common
+  iso.box(-1.4, -5.6, 0.35, 2.8, 2.8, 2.0, C.infra);
+  iso.box(3.6, -5.6, 0.35, 2.8, 2.8, 2.0, '#0369a1');
+
+  // ── Client · Edge
+  iso.path3d([[-4.4, 1.8, 0.95], [-1.65, 1.8, 0.95]], { color: '#7c3aed', width: 2.6 });
+  iso.path3d([[1.25, 1.8, 0.95], [3.55, 1.8, 0.95]], { color: '#7c3aed', width: 2.6 });
+  iso.path3d([[6.7, 1.8, 0.95], [9.95, 1.8, 0.95]], { color: '#7c3aed', width: 3.2 });
+  iso.box(-7.0, 0.5, 0.35, 2.6, 2.6, 1.7, C.client);
+  iso.faceText(-6.7, 3.1, 1.25, '</>', { face: 'left', size: 13, color: '#e2e8f0', mono: true });
+  iso.box(-1.65, 0.45, 0.35, 2.9, 2.7, 1.8, C.nginx);
+  iso.box(3.55, 0.3, 0.35, 3.1, 3.0, 2.7, C.gateway);
+  iso.faceText(3.85, 3.3, 1.6, 'JWT', { face: 'left', size: 13, color: '#ede9fe', mono: true });
+
+  // ── 서비스
+  svc.forEach((s) => iso.box(s.x, SY, 0.35, SW, SW, SH, C[s.k]));
+  const fx = (s, t, c) => iso.faceText(s.x + 0.3, SY + SW, 1.05, t, { face: 'left', size: 10.5, color: c, mono: true });
+  fx(svc[0], 'Outbox', '#dbeafe');
+  fx(svc[1], 'Outbox', '#d1fae5');
+  fx(svc[2], 'Outbox', '#fef3c7');
+  fx(svc[3], 'Agent ×3', '#fce7f3');
+  fx(svc[4], '.DLT', '#fee2e2');
+
+  // ── 앞쪽: Kafka · Zipkin
+  svc.forEach((s, i) => {
+    iso.path3d([[cx(s), SY + SW, 0.5], [cx(s), 6.9, 0.5]], { color: '#f97316', dash: '7 5', width: 2.4, both: i !== 4 });
+  });
+  iso.path3d([[5.1, 3.3, 0.5], [5.1, 6.7, 0.5]], { color: '#f97316', dash: '2 5', width: 2.2 });
+  iso.box(9.4, 6.9, 0.35, 26.4, 2.0, 1.0, C.kafka, { gloss: false });
+  iso.faceText(9.9, 8.9, 0.85, 'APACHE KAFKA 3.9 · KRaft', { face: 'left', size: 12, color: '#fdba74', mono: true, spacing: '0.1em' });
+  iso.faceText(10.2, 7.45, 1.35, 'facility.service.changed · user.withdrawal.requested · match.withdrawal.completed · match.withdrawal.failed · *.DLT', { face: 'top', size: 9, color: '#cbd5e1', mono: true });
+  iso.box(3.7, 6.8, 0.35, 2.8, 2.8, 1.8, C.zipkin);
+
+  // ── 라벨
+  iso.tag(-5.7, 1.8, 2.05, 'Browser', 'React 19 SPA', { accent: C.client, ...T });
+  iso.tag(-0.2, 1.8, 2.15, 'frontend nginx', ':80 · /api → gateway', { accent: C.nginx, ...T });
+  iso.tag(5.1, 1.8, 3.05, 'gateway-service', ':8000 · JWT · lb:// 라우팅', { accent: C.gateway, ...T });
+  svc.forEach((s) => iso.tag(cx(s), SY + SW / 2, SH + 0.35, s.name, s.sub, { accent: C[s.k], ...T }));
+  iso.tag(0, -4.2, 2.35, 'discovery-service', ':8761 · Eureka', { accent: C.infra, ...T });
+  iso.tag(5.0, -4.2, 2.35, 'config-service', ':8888 · config-repo', { accent: '#0369a1', ...T });
+  iso.tag(11.0, -4.2, 2.35, 'user_db', 'MariaDB 11', { accent: C.db, size: 12, subSize: 10.5 });
+  iso.tag(13.7, -3.4, 1.65, 'Redis 7', 'Refresh Token', { accent: C.redis, size: 11.5, subSize: 10 });
+  iso.tag(17.0, -4.2, 2.35, 'match_db', 'MariaDB 11', { accent: C.db, size: 12, subSize: 10.5 });
+  iso.tag(22.0, -4.2, 2.35, 'facility_db', 'MariaDB 11', { accent: C.db, size: 12, subSize: 10.5 });
+  iso.tag(24.3, -9.9, 1.95, '서울 열린데이터 API', '공공체육시설 · 예약', { accent: '#0891b2', size: 12, subSize: 10.5, subMono: false });
+  iso.tag(28.2, -9.9, 1.95, 'OpenAI API', 'Spring AI · Tools', { accent: '#111827', size: 12, subSize: 10.5 });
+  iso.tag(33.8, -9.9, 1.95, 'Gmail SMTP', '운영자 장애 알림', { accent: '#e11d48', size: 12, subSize: 10.5, subMono: false });
+  iso.tag(5.1, 8.2, 2.15, 'Zipkin', ':9411 · 분산 추적', { accent: C.zipkin, ...T });
+  iso.chip(8.3, 1.8, 0.95, 'lb:// × 4', { bg: '#7c3aed', size: 10, mono: true, dy: 20, dx: -16 });
+});
+</script>
+</body>
+</html>

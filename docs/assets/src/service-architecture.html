@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>Sporty Service Communication</title>
+<link rel="stylesheet" href="common.css">
+<style>
+  :root { --w: 1600px; --h: 1000px; }
+  .saga ol { margin: 4px 0 0 18px; }
+  .saga li { margin: 5px 0; font-weight: 600; line-height: 1.45; }
+  .saga li code { font-size: 11px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="head">
+    <div class="eyebrow">Service Communication</div>
+    <h1>동기 호출 × 비동기 이벤트</h1>
+    <p>조회는 OpenFeign, 상태 전파는 Kafka — Transactional Outbox · eventId 중복 제거 · DLT</p>
+  </div>
+  <svg class="stage" id="stage" width="1600" height="1000" viewBox="0 0 1600 1000"></svg>
+  <div class="legend" style="right:40px; top:34px; width:360px">
+    <h4>Legend</h4>
+    <div class="row"><span class="ln" style="border-color:#7c3aed"></span>OpenFeign 동기 호출 (Eureka <code>lb://</code>)</div>
+    <div class="row"><span class="ln dash" style="border-color:#334155"></span>Kafka 이벤트 · ● 발행 → ▶ 구독</div>
+    <div class="row"><span class="sw" style="background:#1e293b"></span>Kafka 토픽 레인 (실제 토픽명)</div>
+    <h4 style="margin-top:12px">Reliability</h4>
+    <div class="row">· Outbox 테이블 → 스케줄러 발행 (user · match · facility)</div>
+    <div class="row">· <code>processed_event</code> 로 eventId 멱등 처리 (match)</div>
+    <div class="row">· 1초 × 3회 재시도 후 <code>&lt;topic&gt;.DLT</code> → 운영자 메일</div>
+    <div class="row" style="display:block">· match → user: Circuit Breaker — 상세 200(프로필 null) · 개설 · 참가 503</div>
+  </div>
+  <div class="legend saga" style="left:40px; bottom:36px; width:400px">
+    <h4>회원 탈퇴 Saga (Choreography)</h4>
+    <ol>
+      <li>user: <code>WITHDRAWAL_PENDING</code> + Outbox → <code>user.withdrawal.requested</code></li>
+      <li>match: 소유 매치 삭제 · 참가 해제 · 차단 → <code>match.withdrawal.completed</code></li>
+      <li>user: <code>WITHDRAWN</code> 확정 · Redis Refresh Token 삭제</li>
+      <li>실패 시 <code>match.withdrawal.failed</code> → user 가 <code>ACTIVE</code> 로 보상 복원, notification 이 메일 발송</li>
+    </ol>
+  </div>
+</div>
+<script src="iso.js"></script>
+<script>
+isoReady(() => {
+  const iso = new Iso(document.getElementById('stage'), { scale: 34, ox: 470, oy: 372 });
+  const C = { user: '#3b82f6', match: '#10b981', facility: '#f59e0b', ai: '#ec4899', noti: '#ef4444', feign: '#7c3aed' };
+  const BW = 2.8, BH = 2.2;
+  const UX = 10.5, MX = 16.5, FX = 22.5, AX = 12.0, NX = 20.0;
+
+  // ── Kafka 플랫폼 + 토픽 레인
+  iso.slab(-0.6, -0.6, 0, 28.2, 8.0, 0.25, '#e2e8f0');
+  iso.box(0, 0, 0.25, 27, 6.8, 0.45, '#1e293b', { gloss: false, shadow: 'url(#shadow)' });
+  iso.faceText(0.4, 6.8, 0.48, 'APACHE KAFKA  ·  KRaft', { face: 'left', size: 11.5, color: '#fdba74', mono: true, spacing: '0.06em' });
+  const Z = 0.72;
+  const lanes = [
+    { y: 1.0, name: 'facility.service.changed', c: C.facility },
+    { y: 2.2, name: 'user.withdrawal.requested', c: C.user },
+    { y: 3.4, name: 'match.withdrawal.completed', c: C.match },
+    { y: 4.6, name: 'match.withdrawal.failed', c: C.noti },
+    { y: 5.8, name: '*.DLT', c: '#94a3b8' },
+  ];
+  lanes.forEach((l) => {
+    iso.box(0.3, l.y - 0.4, Z - 0.02, 26.4, 0.8, 0.02, isoShade(l.c, -0.55), { gloss: false, shadow: false, stroke: isoShade(l.c, -0.2), strokeWidth: 0.6 });
+    iso.faceText(0.55, l.y, Z, l.name, { face: 'top', size: 12.5, color: isoShade(l.c, 0.35), mono: true });
+  });
+
+  // ── 이벤트 경로
+  const BACK = -2.6, FRONT = 9.4;
+  const ev = (pts, c, o = {}) => iso.path3d(pts.map(([x, y]) => [x, y, Z]), { color: c, dash: '8 5', width: 2.8, start: true, ...o });
+  ev([[FX + 0.8, BACK], [FX + 0.8, 1.0], [MX + 0.8, 1.0], [MX + 0.8, BACK]], C.facility);
+  ev([[UX + 0.8, BACK], [UX + 0.8, 2.2], [MX + 1.2, 2.2], [MX + 1.2, BACK]], C.user);
+  ev([[MX + 1.6, BACK], [MX + 1.6, 3.4], [UX + 1.2, 3.4], [UX + 1.2, BACK]], C.match);
+  ev([[MX + 2.0, BACK], [MX + 2.0, 4.6], [UX + 1.6, 4.6], [UX + 1.6, BACK]], C.noti);
+  ev([[MX + 2.0, 4.6], [NX + 1.0, 4.6], [NX + 1.0, FRONT]], C.noti, { start: false });
+  ev([[26.4, 5.8], [NX + 1.6, 5.8], [NX + 1.6, FRONT]], '#64748b');
+
+  // ── 뒤 줄: user · match · facility
+  [[UX, C.user, 'user_outbox', '#dbeafe'], [MX, C.match, 'match_outbox', '#d1fae5'], [FX, C.facility, 'facility_outbox', '#fef3c7']].forEach(([x, c, t, tc]) => {
+    iso.box(x, -5.4, 0.25, BW, BW, BH, c);
+    iso.faceText(x + BW, BACK - 0.15, 1.3, t, { face: 'right', size: 9.5, color: tc, mono: true });
+  });
+
+  // ── 앞 줄: ai · notification
+  iso.box(AX, 9.4, 0.25, BW, BW, BH, C.ai);
+  iso.box(NX, 9.4, 0.25, BW, BW, BH, C.noti);
+  iso.faceText(AX + BW, 12.0, 1.35, 'Agent ×3', { face: 'right', size: 10.5, color: '#fce7f3', mono: true });
+  iso.faceText(NX + BW, 12.0, 1.35, 'JavaMail', { face: 'right', size: 10.5, color: '#fee2e2', mono: true });
+
+  // ── OpenFeign (들린 곡선)
+  const a1 = iso.arc3d([AX + 0.6, 9.4, 2.0], [UX + 0.5, BACK, 1.9], 80, { color: C.feign, width: 3 });
+  const a2 = iso.arc3d([AX + 2.0, 9.4, 2.0], [MX + 0.5, BACK, 1.9], 130, { color: C.feign, width: 3 });
+  const a3 = iso.arc3d([MX + 0.3, BACK, 1.7], [UX + 0.9, BACK, 1.7], 30, { color: C.feign, width: 3 });
+  iso.chipXY(a1.mid.x - 40, a1.mid.y + 6, 'UserClient', { bg: C.feign, mono: true, size: 11 });
+  iso.chipXY(a2.mid.x + 24, a2.mid.y, 'MatchClient', { bg: C.feign, mono: true, size: 11 });
+
+  // ── 라벨
+  const T = { size: 14, subSize: 11.5 };
+  iso.tag(UX + 1.4, -4.0, BH + 0.25, 'user-service', '회원 · 인증 · 탈퇴 Saga 시작', { accent: C.user, subMono: false, ...T });
+  iso.tag(MX + 1.4, -4.0, BH + 0.25, 'match-service', 'processed_event · user_guard', { accent: C.match, dx: 34, ...T });
+  iso.tag(FX + 1.4, -4.0, BH + 0.25, 'facility-service', '서울 API 동기화 → 변경 이벤트', { accent: C.facility, subMono: false, ...T });
+  iso.tag(AX + 1.4, 10.8, BH + 0.25, 'ai-service', 'Feign 조회 + OpenAI Tools', { accent: C.ai, ...T });
+  iso.tag(NX + 1.4, 10.8, BH + 0.25, 'notification-service', 'failed · *.DLT 구독 → Gmail', { accent: C.noti, ...T });
+  iso.chip(26.4, 5.8, Z, '1s × 3 retry → .DLT', { bg: '#334155', mono: true, size: 10.5, dx: 36, dy: 12 });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,99 @@
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&display=swap');
+
+:root {
+  --sans: 'Pretendard', 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
+  --mono: 'JetBrains Mono', 'Pretendard', Consolas, monospace;
+  --ink: #0f172a;
+  --muted: #475569;
+  --line: #e2e8f0;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  width: var(--w);
+  height: var(--h);
+  overflow: hidden;
+  background: transparent;
+  font-family: var(--sans);
+}
+
+.card {
+  position: absolute;
+  inset: 0;
+  border-radius: 28px;
+  background:
+    radial-gradient(1200px 600px at 85% -10%, #e0e7ff 0%, transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, #dcfce7 0%, transparent 55%),
+    linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
+  border: 1px solid #dbe3ee;
+  overflow: hidden;
+}
+
+.card::before {
+  /* 아이소메트릭 점 격자 */
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(#cbd5e1 1px, transparent 1.4px);
+  background-size: 28px 16px;
+  opacity: 0.55;
+}
+
+.head {
+  position: absolute;
+  left: 44px;
+  top: 34px;
+  z-index: 2;
+}
+.head .eyebrow {
+  font: 700 13px var(--mono);
+  letter-spacing: 0.14em;
+  color: #6366f1;
+  text-transform: uppercase;
+}
+.head h1 {
+  margin-top: 6px;
+  font-size: 34px;
+  font-weight: 800;
+  color: var(--ink);
+  letter-spacing: -0.02em;
+}
+.head p {
+  margin-top: 6px;
+  font-size: 15px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+svg.stage {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+.legend {
+  position: absolute;
+  z-index: 2;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px 16px;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+  font-size: 12.5px;
+  color: var(--ink);
+}
+.legend h4 {
+  font: 800 11px var(--mono);
+  letter-spacing: 0.12em;
+  color: #64748b;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.legend .row { display: flex; align-items: center; gap: 9px; margin: 5px 0; font-weight: 600; }
+.legend .ln { width: 30px; height: 0; border-top: 2.6px solid; flex: none; }
+.legend .ln.dash { border-top-style: dashed; }
+.legend .ln.dot { border-top-style: dotted; }
+.legend code { font: 600 11.5px var(--mono); color: #334155; }
+.legend .sw { width: 12px; height: 12px; border-radius: 3px; flex: none; }
